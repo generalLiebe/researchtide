@@ -1,0 +1,58 @@
+[project]
+name = "researchtide"
+version = "0.1.0"
+description = "Predict the future of science from within — a multi-agent research trend analysis system"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Sosui Moribe", email = "moribe.sosui.695@s.kyushu-u.ac.jp" }]
+
+dependencies = [
+    # Data ingestion
+    "httpx>=0.27",
+    "arxiv>=2.1",
+    "pydantic>=2.0",
+    # NLP / Topic modeling
+    "bertopic>=0.16",
+    "sentence-transformers>=3.0",
+    # Graph analysis
+    "networkx>=3.3",
+    # Anomaly detection / numerical
+    "scikit-learn>=1.5",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    # Web API
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.5",
+]
+viz = [
+    "pyvis>=0.3",
+    "matplotlib>=3.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/researchtide"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

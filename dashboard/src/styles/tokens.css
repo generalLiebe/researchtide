@@ -1,0 +1,37 @@
+:root {
+  --bg-primary: #eaf3ff;
+  --bg-secondary: #f0f6ff;
+  --bg-tertiary: #dce8f8;
+  --bg-panel: rgba(255, 255, 255, 0.92);
+  --bg-surface: #f7f9ff;
+
+  --text-primary: #1a3060;
+  --text-secondary: #3a5a9a;
+  --text-muted: #8aaad0;
+  --text-mono: #6a8ac0;
+
+  --tier-s: #e8a020;
+  --tier-a: #3a7ad4;
+  --tier-b: #2ab8a0;
+  --tier-c: #8aaad0;
+
+  --accent-glow: rgba(100, 170, 255, 0.18);
+  --accent-line: rgba(80, 130, 210, 0.18);
+  --accent-border: rgba(100, 150, 220, 0.35);
+  --accent-grid: rgba(74, 123, 203, 0.06);
+
+  --alert-ethics: #e85d24;
+  --alert-weak: #e8a020;
+  --success: #2ab8a0;
+
+  --font-headline: 'Space Grotesk', -apple-system, sans-serif;
+  --font-body: 'Manrope', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --fs-hud: 10px;
+  --fs-label: 11px;
+  --fs-body: 13px;
+  --fs-tag: 10px;
+  --fs-metric: 20px;
+  --fs-heading: 18px;
+}
