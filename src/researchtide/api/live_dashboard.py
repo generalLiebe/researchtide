@@ -14,6 +14,7 @@ from researchtide.api.schemas import DemoResponse, GraphEdge, Hub, TopicNode
 from researchtide.ingestion.openalex import extract_institutions, fetch_works, works_to_papers
 from researchtide.analysis.hub_generator import generate_hubs
 from researchtide.analysis.citation_velocity import compute_acceleration as _compute_accel
+from researchtide.analysis.ethics_lag import compute_ethics_lag
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +239,7 @@ def _build_topics_from_works(works: list[dict]) -> tuple[list[TopicNode], list[G
     # Track citations and monthly publication counts for CV/acceleration
     concept_citations: dict[str, int] = {}  # label → total citations
     concept_monthly: dict[str, Counter[str]] = {}  # label → {YYYY-MM: count}
+    concept_works: dict[str, list[dict]] = {}  # label → [work dicts] for ethics lag
 
     # Build hierarchy tree: { label: { level, parent, children: {label: ...}, work_count, years } }
     hierarchy: dict[str, dict] = {}
@@ -305,6 +307,7 @@ def _build_topics_from_works(works: list[dict]) -> tuple[list[TopicNode], list[G
             if pub_year:
                 concept_years.setdefault(c, []).append(pub_year)
             concept_citations[c] = concept_citations.get(c, 0) + cite_count
+            concept_works.setdefault(c, []).append(work)
             if month_key:
                 if c not in concept_monthly:
                     concept_monthly[c] = Counter()
@@ -402,7 +405,7 @@ def _build_topics_from_works(works: list[dict]) -> tuple[list[TopicNode], list[G
         node_data.append({
             "idx": idx, "label": label, "status": status, "ratio": ratio,
             "radius": radius, "growth_signal": growth_signal,
-            "ethic_lag": rng.uniform(2.0, 12.0),
+            "ethic_lag": compute_ethics_lag(concept_works.get(label, [])),
             "social": ratio * 80 + rng.uniform(-5, 5),
             "influences": influences[:5], "influenced_by": influenced_by[:5],
             "info": info,
@@ -553,7 +556,7 @@ def get_topic_children(parent_label: str, parent_level: str) -> tuple[list[Topic
             y=float(ay),
             radius=float(cd["radius"]),
             growth=float(max(0, min(100, cd["growth_signal"] + rng.uniform(-3, 3)))),
-            ethicLag=float(rng.uniform(2.0, 12.0)),
+            ethicLag=0.0,  # Works data not available at child level
             socialPenetration=float(max(0, min(100, cd["ratio"] * 80 + rng.uniform(-5, 5)))),
             influences=[],
             influencedBy=[],

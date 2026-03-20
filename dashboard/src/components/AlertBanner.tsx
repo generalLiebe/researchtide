@@ -30,8 +30,12 @@ function getTopicAlerts(topic: TopicNode): Alert[] {
   if (topic.growth > 70) {
     alerts.push({ level: 'info', message: 'GROWTH SPIKE DETECTED' })
   }
-  if (topic.ethicLag > 10) {
-    alerts.push({ level: 'danger', message: 'ETHICS LAG WARNING: REGULATION TRAILING' })
+  if (topic.ethicLag >= 18) {
+    alerts.push({ level: 'danger', message: 'ETHICS BLIND SPOT: NO SAFETY RESEARCH DETECTED' })
+  } else if (topic.ethicLag > 12) {
+    alerts.push({ level: 'danger', message: 'ETHICS LAG CRITICAL: REGULATION TRAILING >12 MONTHS' })
+  } else if (topic.ethicLag > 6) {
+    alerts.push({ level: 'warning', message: 'ETHICS LAG ELEVATED: REGULATION TRAILING' })
   }
   return alerts
 }
