@@ -275,9 +275,15 @@ def works_to_papers(works: list[dict]) -> list[Paper]:
         topic = w.get("primary_topic") or {}
         if topic.get("display_name"):
             categories.append(topic["display_name"])
+        subfield = topic.get("subfield", {})
+        if subfield.get("display_name"):
+            categories.append(subfield["display_name"])
         field = topic.get("field", {})
         if field.get("display_name"):
             categories.append(field["display_name"])
+        domain = topic.get("domain", {})
+        if domain.get("display_name"):
+            categories.append(domain["display_name"])
 
         papers.append(Paper(
             paper_id=oa_id,

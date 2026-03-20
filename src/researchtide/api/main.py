@@ -102,10 +102,12 @@ def live_papers(
         papers_raw = [p for p in papers_raw if p.get("paper_id") in allowed_ids]
 
     if topic:
-        topic_lower = topic.lower()
+        from researchtide.api.live_dashboard import get_topic_family_labels
+
+        family = get_topic_family_labels(topic)
         papers_raw = [
             p for p in papers_raw
-            if any(topic_lower in cat.lower() for cat in p.get("categories", []))
+            if any(cat.lower() in family for cat in p.get("categories", []))
         ]
 
     if keyword:

@@ -48,6 +48,18 @@ export default function App() {
     }
   }
 
+  // When a node is selected while DEEP ANALYSIS is open, switch to that node's analysis
+  const selectNode = useCallback((next: Selected) => {
+    setSel(next)
+    if (deepTarget !== null) {
+      if (next.kind === 'hub') {
+        setDeepTarget({ hub: next.data.name })
+      } else if (next.kind === 'topic') {
+        setDeepTarget({ topic: next.data.label })
+      }
+    }
+  }, [deepTarget])
+
   return (
     <div
       style={{
@@ -60,7 +72,7 @@ export default function App() {
       <HudOverlay view={view} statusMessage={statusMessage} />
 
       <div style={{ paddingTop: 44, paddingInline: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 15 }}>
-        <TabBar view={view} onChange={setView} />
+        <TabBar view={view} onChange={(v) => { setView(v); setSel({ kind: 'none' }); setDeepTarget(null) }} />
         <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
           <SearchOverlay
             data={data ?? null}
@@ -68,7 +80,7 @@ export default function App() {
             onToggle={toggleSearch}
             onSelectTopic={(t) => {
               setView('topics')
-              setSel({ kind: 'topic', data: t })
+              selectNode({ kind: 'topic', data: t })
             }}
             onSelectPaperTopic={(topic) => setDeepTarget({ topic })}
             setView={setView}
@@ -110,7 +122,7 @@ export default function App() {
             <GlobeView
               hubs={data?.hubs ?? []}
               edges={data?.edges ?? []}
-              onSelectHub={(hub) => setSel({ kind: 'hub', data: hub })}
+              onSelectHub={(hub) => selectNode({ kind: 'hub', data: hub })}
               onClear={() => setSel({ kind: 'none' })}
               active={view === 'world'}
             />
@@ -118,7 +130,7 @@ export default function App() {
             <WorldMapView
               hubs={data?.hubs ?? []}
               edges={data?.edges ?? []}
-              onSelectHub={(hub) => setSel({ kind: 'hub', data: hub })}
+              onSelectHub={(hub) => selectNode({ kind: 'hub', data: hub })}
               onClear={() => setSel({ kind: 'none' })}
               active={view === 'world'}
             />
@@ -135,7 +147,7 @@ export default function App() {
           <TopicGraphView
             topics={drill.currentTopics}
             edges={drill.currentEdges}
-            onSelectTopic={(topic) => setSel({ kind: 'topic', data: topic })}
+            onSelectTopic={(topic) => selectNode({ kind: 'topic', data: topic })}
             onClear={() => setSel({ kind: 'none' })}
             active={view === 'topics'}
             breadcrumb={drill.breadcrumb}

@@ -121,6 +121,38 @@ def get_cached_papers(
 _hierarchy_tree: dict[str, dict] = {}
 
 
+def _collect_descendant_labels(node: dict) -> set[str]:
+    """Recursively collect all descendant labels from a hierarchy node."""
+    labels: set[str] = set()
+    for name, child in node.get("children", {}).items():
+        labels.add(name.lower())
+        labels |= _collect_descendant_labels(child)
+    return labels
+
+
+def get_topic_family_labels(topic_label: str) -> set[str]:
+    """Return a set of lowercase labels for the topic and all its descendants.
+
+    Searches the hierarchy tree for the given label at any level.
+    If the label is a parent node (domain/field/subfield), returns
+    all descendant labels so that papers under child topics also match.
+    """
+    target = topic_label.lower()
+    result = {target}
+
+    def _search(tree: dict[str, dict]) -> bool:
+        for name, node in tree.items():
+            if name.lower() == target:
+                result.update(_collect_descendant_labels(node))
+                return True
+            if _search(node.get("children", {})):
+                return True
+        return False
+
+    _search(_hierarchy_tree)
+    return result
+
+
 def _layout_nodes(
     positions: list[tuple[float, float]],
     radii: list[float],
