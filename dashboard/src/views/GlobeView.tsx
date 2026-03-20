@@ -75,10 +75,24 @@ export function GlobeView({
   const dragRef = useRef<{ active: boolean; startX: number; startY: number; startLon: number; startLat: number; totalDist: number }>({
     active: false, startX: 0, startY: 0, startLon: 0, startLat: 0, totalDist: 0,
   })
+  const zoomRef = useRef(3.0) // start zoomed in, animate to 1.0
+  const prevActiveRef = useRef(active)
+
+  // Click ripple effect state (startT will be set from the animation frame time)
+  const rippleRef = useRef<{ x: number; y: number; startT: number; color: string } | null>(null)
+  const lastFrameT = useRef(0) // track the latest animation frame time
 
   useEffect(() => {
     loadContinentsRaw().then(setContinentData)
   }, [])
+
+  // Reset zoom when tab becomes active (re-entering globe view)
+  useEffect(() => {
+    if (active && !prevActiveRef.current) {
+      zoomRef.current = 3.0
+    }
+    prevActiveRef.current = active
+  }, [active])
 
   const hubById = useMemo(() => new Map(hubs.map((h) => [h.id, h])), [hubs])
 
@@ -104,15 +118,24 @@ export function GlobeView({
     const { w, h, dpr } = dims
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
+    lastFrameT.current = tMs
+
     // Auto-rotate when not dragging
     if (!dragRef.current.active) {
       rotRef.current.lon += 0.08
     }
 
+    // Animate zoom: ease from current value toward 1.0
+    const zoom = zoomRef.current
+    zoomRef.current = 1.0 + (zoom - 1.0) * 0.94 // exponential decay (~60fps smooth)
+
+    // Fade-in opacity tied to zoom progress (fully visible when zoom < 1.3)
+    const opacity = Math.min(1, Math.max(0, (3.0 - zoom) / 2.0))
+
     const { lon: rotLon, lat: rotLat } = rotRef.current
     const cx = w * 0.5
     const cy = h * 0.48
-    const R = Math.min(w, h) * 0.38
+    const R = Math.min(w, h) * 0.38 * zoom
 
     // Background gradient (same as WorldMapView)
     const grad = ctx.createRadialGradient(cx, cy, 10, cx, cy, w * 0.6)
@@ -120,6 +143,8 @@ export function GlobeView({
     grad.addColorStop(1, '#dce8f8')
     ctx.fillStyle = grad
     ctx.fillRect(0, 0, w, h)
+
+    ctx.globalAlpha = opacity
 
     // Globe body
     const globeGrad = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.3, R * 0.1, cx, cy, R)
@@ -164,21 +189,48 @@ export function GlobeView({
     // Continents
     if (continentData) {
       ctx.save()
+      // Clip to globe circle to prevent fill leaking outside
+      ctx.beginPath()
+      ctx.arc(cx, cy, R, 0, Math.PI * 2)
+      ctx.clip()
+
       ctx.fillStyle = 'rgba(180, 210, 240, 0.55)'
       ctx.strokeStyle = 'rgba(100, 150, 220, 0.35)'
       ctx.lineWidth = 0.8
       for (const ring of continentData) {
         if (ring.length < 3) continue
-        ctx.beginPath()
-        let started = false
+
+        // Project all points; track which are visible
+        const projected: Array<{ x: number; y: number } | null> = []
+        let allVisible = true
         for (let i = 0; i < ring.length; i++) {
           const p = projectToGlobe(ring[i][0], ring[i][1], rotLon, rotLat, cx, cy, R)
-          if (!p) { started = false; continue }
-          if (!started) { ctx.moveTo(p.x, p.y); started = true }
-          else ctx.lineTo(p.x, p.y)
+          projected.push(p)
+          if (!p) allVisible = false
         }
-        ctx.fill()
-        ctx.stroke()
+
+        if (allVisible) {
+          // Fully visible ring — fill and stroke normally
+          ctx.beginPath()
+          ctx.moveTo(projected[0]!.x, projected[0]!.y)
+          for (let i = 1; i < projected.length; i++) {
+            ctx.lineTo(projected[i]!.x, projected[i]!.y)
+          }
+          ctx.closePath()
+          ctx.fill()
+          ctx.stroke()
+        } else {
+          // Partially visible — stroke visible segments only (no fill to avoid artifacts)
+          ctx.beginPath()
+          let started = false
+          for (let i = 0; i < projected.length; i++) {
+            const p = projected[i]
+            if (!p) { started = false; continue }
+            if (!started) { ctx.moveTo(p.x, p.y); started = true }
+            else ctx.lineTo(p.x, p.y)
+          }
+          ctx.stroke()
+        }
       }
       ctx.restore()
     }
@@ -226,7 +278,7 @@ export function GlobeView({
       const dashA = 5 + 3 * Math.sin(t * 0.04 + i)
       ctx.setLineDash([dashA, 8])
       ctx.lineDashOffset = -t * 0.4
-      ctx.globalAlpha = Math.max(0.05, Math.min(0.6, e.weight))
+      ctx.globalAlpha = Math.max(0.05, Math.min(0.6, e.weight)) * opacity
       ctx.beginPath()
       ctx.moveTo(a.x, a.y)
       ctx.lineTo(b.x, b.y)
@@ -287,6 +339,74 @@ export function GlobeView({
       ctx.textAlign = 'center'
       ctx.fillText(p.name, p.x, p.y + baseR + 14)
     }
+
+    // Click ripple effect
+    const rip = rippleRef.current
+    if (rip) {
+      const elapsedMs = tMs - rip.startT
+      const durationMs = 750
+      const progress = elapsedMs / durationMs
+
+      if (progress > 1) {
+        rippleRef.current = null
+      } else {
+        ctx.save()
+        const col = rip.color
+
+        // 3 staggered expanding rings
+        for (let i = 0; i < 3; i++) {
+          const ringProgress = Math.max(0, Math.min(1, (progress - i * 0.12) / 0.7))
+          if (ringProgress <= 0) continue
+          const ease = 1 - (1 - ringProgress) * (1 - ringProgress) // easeOut
+          const radius = 8 + ease * 60
+          const alpha = (1 - ringProgress) * 0.6
+          ctx.strokeStyle = col
+          ctx.globalAlpha = alpha * opacity
+          ctx.lineWidth = 1.5 - ringProgress * 1.0
+          ctx.setLineDash([3 + ringProgress * 8, 2 + ringProgress * 4])
+          ctx.beginPath()
+          ctx.arc(rip.x, rip.y, radius, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+
+        // Center flash
+        const flashAlpha = Math.max(0, 1 - progress * 3) * 0.7
+        if (flashAlpha > 0) {
+          const g = ctx.createRadialGradient(rip.x, rip.y, 0, rip.x, rip.y, 20)
+          g.addColorStop(0, `${col}`)
+          g.addColorStop(1, `${col}00`)
+          ctx.globalAlpha = flashAlpha * opacity
+          ctx.fillStyle = g
+          ctx.setLineDash([])
+          ctx.beginPath()
+          ctx.arc(rip.x, rip.y, 20, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        // Cross-hair lines that shrink
+        const crossAlpha = Math.max(0, 1 - progress * 2) * 0.4
+        if (crossAlpha > 0) {
+          ctx.globalAlpha = crossAlpha * opacity
+          ctx.strokeStyle = col
+          ctx.lineWidth = 0.8
+          ctx.setLineDash([])
+          const len = 20 + progress * 30
+          const gap = 6 + progress * 10
+          // Horizontal
+          ctx.beginPath()
+          ctx.moveTo(rip.x - len, rip.y); ctx.lineTo(rip.x - gap, rip.y)
+          ctx.moveTo(rip.x + gap, rip.y); ctx.lineTo(rip.x + len, rip.y)
+          // Vertical
+          ctx.moveTo(rip.x, rip.y - len); ctx.lineTo(rip.x, rip.y - gap)
+          ctx.moveTo(rip.x, rip.y + gap); ctx.lineTo(rip.x, rip.y + len)
+          ctx.stroke()
+        }
+
+        ctx.restore()
+      }
+    }
+
+    ctx.globalAlpha = 1
   }, active)
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -329,7 +449,7 @@ export function GlobeView({
       const { lon: rotLon, lat: rotLat } = rotRef.current
       const cx = dims.w * 0.5
       const cy = dims.h * 0.48
-      const R = Math.min(dims.w, dims.h) * 0.38
+      const R = Math.min(dims.w, dims.h) * 0.38 * zoomRef.current
 
       const points: Array<{ id: number; x: number; y: number; r: number }> = []
       for (const hub of hubs) {
@@ -344,7 +464,15 @@ export function GlobeView({
       const hit = hitTest(mx, my, points)
       if (hit == null) return onClear()
       const hub = hubById.get(hit)
-      if (hub) onSelectHub(hub)
+      if (hub) {
+        // Trigger ripple effect at the hub's projected position
+        const hitPt = points.find((p) => p.id === hit)
+        if (hitPt) {
+          const color = tierColor(hub.intensity)
+          rippleRef.current = { x: hitPt.x, y: hitPt.y, startT: lastFrameT.current, color }
+        }
+        onSelectHub(hub)
+      }
     }
   }
 

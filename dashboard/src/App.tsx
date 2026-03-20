@@ -22,7 +22,7 @@ export default function App() {
   const [view, setView] = useState<ViewKey>('world')
   const [sel, setSel] = useState<Selected>({ kind: 'none' })
   const [deepTarget, setDeepTarget] = useState<{ hub?: string; topic?: string } | null>(null)
-  const [worldMode, setWorldMode] = useState<'flat' | 'globe'>('flat')
+  const [worldMode, setWorldMode] = useState<'flat' | 'globe'>('globe')
   const [searchOpen, setSearchOpen] = useState(false)
   const toggleSearch = useCallback(() => setSearchOpen((v) => !v), [])
 
