@@ -132,3 +132,19 @@ export interface KeywordTrendsData {
   field_groups: Record<string, string[]>
 }
 
+export interface CacheStatusInfo {
+  exists: boolean
+  age_seconds: number | null
+  size_bytes: number | null
+}
+
+export interface HealthData {
+  status: 'ok' | 'degraded'
+  version: string
+  paper_count: number
+  keyword_count: number
+  topic_count: number
+  caches: Record<string, CacheStatusInfo>
+  uptime_seconds: number
+}
+

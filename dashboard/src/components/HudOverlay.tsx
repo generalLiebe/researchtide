@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useScrambleText } from '../hooks/useScrambleText'
+import type { HealthData } from '../types/hub'
 import type { ViewKey } from './TabBar'
-
-const STATUS_CYCLE = [
-  'MONITORING GLOBAL RESEARCH STREAMS',
-  'ANALYZING CITATION FLOWS',
-  'DETECTING WEAK SIGNALS',
-  'COMPUTING ETHICS LAG DELTA',
-  'UPDATING INFLUENCE GRAPH',
-] as const
 
 function nowClock() {
   const d = new Date()
@@ -16,33 +9,99 @@ function nowClock() {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+function formatAge(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}S AGO`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}M AGO`
+  const h = Math.floor(seconds / 3600)
+  const m = Math.round((seconds % 3600) / 60)
+  return m > 0 ? `${h}H ${m}M AGO` : `${h}H AGO`
+}
+
+function formatUptime(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}S`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}M`
+  const h = Math.floor(seconds / 3600)
+  const m = Math.round((seconds % 3600) / 60)
+  return `${h}H ${m}M`
+}
+
 export function HudOverlay({
   view,
-  statusMessage,
+  health,
 }: {
   view: ViewKey
-  statusMessage: string
+  health: HealthData | null
 }) {
   const [clock, setClock] = useState(nowClock())
-  const [cycleIdx, setCycleIdx] = useState(0)
+  const [infoIdx, setInfoIdx] = useState(0)
 
   useEffect(() => {
     const t = setInterval(() => setClock(nowClock()), 1000)
     return () => clearInterval(t)
   }, [])
 
+  // Cycle through real status info
+  const infoMessages = useMemo(() => {
+    if (!health) return ['CONNECTING TO API...']
+    const msgs: string[] = []
+
+    // Data freshness
+    const papersCache = health.caches?.papers
+    if (papersCache?.exists && papersCache.age_seconds != null) {
+      msgs.push(`DATA UPDATED ${formatAge(papersCache.age_seconds)}`)
+    }
+
+    // Keywords status
+    const kwCache = health.caches?.keywords
+    if (kwCache?.exists) {
+      msgs.push('KEYWORDS INDEXED')
+    } else {
+      msgs.push('KEYWORDS PENDING')
+    }
+
+    // Hierarchy status
+    const hierCache = health.caches?.hierarchy
+    if (hierCache?.exists) {
+      msgs.push('TOPIC HIERARCHY READY')
+    }
+
+    // Uptime
+    msgs.push(`UPTIME ${formatUptime(health.uptime_seconds)}`)
+
+    // Version
+    msgs.push(`VERSION ${health.version}`)
+
+    return msgs
+  }, [health])
+
   useEffect(() => {
-    const t = setInterval(() => setCycleIdx((v) => (v + 1) % STATUS_CYCLE.length), 1400)
+    const t = setInterval(() => setInfoIdx((v) => (v + 1) % infoMessages.length), 3000)
     return () => clearInterval(t)
-  }, [])
+  }, [infoMessages.length])
 
   const viewNameRaw = useMemo(
     () => (view === 'world' ? 'WORLD MAP' : view === 'topics' ? 'TOPIC GRAPH' : view === 'papers' ? 'PAPER RANKING' : 'TIMELINE'),
     [view],
   )
   const viewName = useScrambleText(viewNameRaw, { duration: 400 })
-  const scrambledCycle = useScrambleText(STATUS_CYCLE[cycleIdx], { duration: 500 })
-  const scrambledStatus = useScrambleText(statusMessage, { duration: 600 })
+
+  const statusText = useMemo(() => {
+    if (!health) return 'CONNECTING'
+    return health.status === 'ok' ? 'SYSTEM NOMINAL' : 'SYSTEM DEGRADED'
+  }, [health])
+  const scrambledStatus = useScrambleText(statusText, { duration: 600 })
+
+  const scrambledInfo = useScrambleText(infoMessages[infoIdx % infoMessages.length], { duration: 500 })
+
+  // Node status
+  const nodeText = useMemo(() => {
+    if (!health) return 'CONNECTING'
+    if (health.paper_count > 0) return `${health.paper_count} PAPERS INDEXED`
+    return 'NO DATA'
+  }, [health])
+
+  const statusColor = !health ? 'var(--text-muted)' : health.status === 'ok' ? 'var(--success)' : '#f59e0b'
+  const nodeOnline = health?.paper_count ? true : false
 
   const hudText: React.CSSProperties = {
     fontFamily: 'var(--font-mono)',
@@ -91,7 +150,7 @@ export function HudOverlay({
             {`RESEARCHTIDE // ${viewName}`}
           </span>
           <div style={{ width: 1, height: 12, background: 'rgba(177, 197, 255, 0.3)' }} />
-          <span style={{ ...hudText, color: 'var(--text-muted)' }}>
+          <span style={{ ...hudText, color: statusColor }}>
             {`STATUS: ${scrambledStatus.replace(/ /g, '_')}`}
           </span>
         </div>
@@ -116,19 +175,19 @@ export function HudOverlay({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={hudText}>NODES ONLINE</span>
+          <span style={hudText}>{nodeText}</span>
           <div
             style={{
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: 'var(--success)',
+              background: nodeOnline ? 'var(--success)' : '#ef4444',
               animation: 'pulse 2s ease-in-out infinite',
             }}
           />
         </div>
-        <span style={hudText}>{scrambledCycle}</span>
-        <span style={hudText}>{scrambledStatus}</span>
+        <span style={hudText}>{scrambledInfo}</span>
+        <span style={{ ...hudText, color: statusColor }}>{scrambledStatus}</span>
       </div>
 
       <style>{`

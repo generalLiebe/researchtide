@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: researchtide-api
+    runtime: docker
+    healthCheckPath: /health
+    envVars:
+      - key: OPENALEX_EMAIL
+        sync: false
+      - key: S2_API_KEY
+        sync: false
+      - key: DASHBOARD_CACHE_TTL
+        value: "21600"
+      - key: RESEARCHTIDE_CORS_ORIGIN
+        sync: false
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1

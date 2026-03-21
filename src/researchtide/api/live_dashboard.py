@@ -123,6 +123,80 @@ def get_cached_papers(
         return [], {}
 
 
+def append_papers(
+    new_papers: list,
+    cache_dir: str = "data",
+) -> int:
+    """Append new papers to the papers cache, deduplicating by DOI/title.
+
+    Args:
+        new_papers: List of Paper model instances to add.
+        cache_dir: Directory for cache files.
+
+    Returns:
+        Number of genuinely new papers added.
+    """
+    import re
+
+    cache_path = Path(cache_dir) / "live_papers.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load existing data
+    existing_papers: list[dict] = []
+    hub_paper_map: dict[str, list[str]] = {}
+    if cache_path.exists():
+        try:
+            data = json.loads(cache_path.read_text())
+            existing_papers = data.get("papers", [])
+            hub_paper_map = data.get("hub_paper_map", {})
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
+
+    # Build dedup index from existing papers
+    seen_doi: set[str] = set()
+    seen_title_author: set[str] = set()
+    for p in existing_papers:
+        doi = p.get("doi")
+        if doi:
+            seen_doi.add(doi.lower().strip())
+        title = p.get("title", "")
+        first_author = (p.get("authors") or [""])[0].lower() if p.get("authors") else ""
+        norm_title = re.sub(r"[^a-z0-9]", "", title.lower())
+        seen_title_author.add(f"{norm_title}|{first_author}")
+
+    # Filter truly new papers
+    added = 0
+    for paper in new_papers:
+        p_dict = paper.model_dump() if hasattr(paper, "model_dump") else paper
+
+        doi = p_dict.get("doi")
+        if doi and doi.lower().strip() in seen_doi:
+            continue
+
+        title = p_dict.get("title", "")
+        first_author = (p_dict.get("authors") or [""])[0].lower() if p_dict.get("authors") else ""
+        norm_title = re.sub(r"[^a-z0-9]", "", title.lower())
+        key = f"{norm_title}|{first_author}"
+        if key in seen_title_author:
+            continue
+
+        existing_papers.append(p_dict)
+        if doi:
+            seen_doi.add(doi.lower().strip())
+        seen_title_author.add(key)
+        added += 1
+
+    # Write back
+    payload = {
+        "papers": existing_papers,
+        "hub_paper_map": hub_paper_map,
+        "_cached_at": time.time(),
+    }
+    cache_path.write_text(json.dumps(payload, default=str))
+    logger.info("Appended %d papers (total: %d)", added, len(existing_papers))
+    return added
+
+
 # Module-level hierarchy cache
 _hierarchy_tree: dict[str, dict] = {}
 

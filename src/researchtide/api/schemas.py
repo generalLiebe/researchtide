@@ -10,9 +10,20 @@ from pydantic import BaseModel, Field
 from researchtide.models.paper import Paper
 
 
+class CacheStatus(BaseModel):
+    exists: bool
+    age_seconds: float | None = None
+    size_bytes: int | None = None
+
+
 class HealthResponse(BaseModel):
-    status: Literal["ok"]
+    status: Literal["ok", "degraded"]
     version: str
+    paper_count: int = 0
+    keyword_count: int = 0
+    topic_count: int = 0
+    caches: dict[str, CacheStatus] = {}
+    uptime_seconds: float = 0
 
 
 class ArxivIngestRequest(BaseModel):

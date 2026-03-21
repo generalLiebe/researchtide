@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -11,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from researchtide import __version__
 from researchtide.api.demo import build_demo_payload
 from researchtide.api.schemas import (
+    CacheStatus,
     ArxivIngestRequest,
     ArxivIngestResponse,
     EnrichRequest,
@@ -42,13 +48,98 @@ from researchtide.ingestion.semantic_scholar import RATE_LIMIT_INTERVAL, enrich_
 
 load_dotenv()
 
-app = FastAPI(title="ResearchTide API", version=__version__)
+logger = logging.getLogger(__name__)
+
+_start_time = time.time()
+
+# ---------------------------------------------------------------------------
+# Background scheduler
+# ---------------------------------------------------------------------------
+_INCREMENTAL_INTERVAL = 4 * 3600  # 4 hours
+_FULL_REBUILD_EVERY = 6  # every 6th incremental run → ~24h
+
+
+async def _scheduled_refresh() -> None:
+    """Background loop: incremental every 4 h, full rebuild every ~24 h."""
+    counter = 0
+    while True:
+        try:
+            counter += 1
+            if counter % _FULL_REBUILD_EVERY == 0:
+                logger.info("Scheduled full rebuild starting…")
+                await asyncio.to_thread(_run_full_refresh)
+                logger.info("Scheduled full rebuild done.")
+            else:
+                logger.info("Scheduled incremental refresh starting…")
+                await asyncio.to_thread(_run_incremental_refresh)
+                logger.info("Scheduled incremental refresh done.")
+        except Exception:
+            logger.exception("Scheduled refresh failed")
+        await asyncio.sleep(_INCREMENTAL_INTERVAL)
+
+
+def _run_incremental_refresh() -> None:
+    from researchtide.api.live_dashboard import append_papers, get_cached_papers
+    from researchtide.ingestion.openalex import fetch_works, works_to_papers
+    from researchtide.ingestion.semantic_scholar import enrich_papers as s2_enrich
+
+    email = os.getenv("OPENALEX_EMAIL", "")
+    s2_key = os.getenv("S2_API_KEY")
+
+    # Determine from_date from cached papers
+    papers_raw, _ = get_cached_papers()
+    from_date = None
+    if papers_raw:
+        dates = [str(p.get("published", ""))[:10] for p in papers_raw if p.get("published")]
+        if dates:
+            from_date = max(dates)
+
+    if not from_date:
+        from datetime import date, timedelta
+
+        from_date = (date.today() - timedelta(days=30)).isoformat()
+
+    works = fetch_works(max_results=500, email=email, from_date=from_date)
+    if not works:
+        return
+
+    papers = works_to_papers(works)
+
+    enrichable = [p for p in papers if p.arxiv_id or p.doi]
+    if enrichable and s2_key:
+        s2_enrich(enrichable, api_key=s2_key, delay=1.1)
+
+    append_papers(papers)
+
+
+def _run_full_refresh() -> None:
+    from researchtide.api.live_dashboard import build_live_payload
+
+    email = os.getenv("OPENALEX_EMAIL", "")
+    build_live_payload(email=email, cache_ttl=0)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    """Start the background scheduler on app startup."""
+    task = asyncio.create_task(_scheduled_refresh())
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(title="ResearchTide API", version=__version__, lifespan=lifespan)
+
+# CORS — support comma-separated origins via env var
+_cors_raw = os.getenv("RESEARCHTIDE_CORS_ORIGIN", "http://localhost:5173")
+_cors_origins = [o.strip() for o in _cors_raw.split(",")]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("RESEARCHTIDE_CORS_ORIGIN", "http://localhost:5173"),
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,7 +148,43 @@ app.add_middleware(
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", version=__version__)
+    from researchtide.api.live_dashboard import get_cached_papers
+
+    # Check cache files
+    cache_files = {
+        "dashboard": "data/live_dashboard.json",
+        "papers": "data/live_papers.json",
+        "keywords": "data/live_keywords.json",
+        "hierarchy": "data/live_hierarchy.json",
+    }
+    caches: dict[str, CacheStatus] = {}
+    for name, filepath in cache_files.items():
+        p = Path(filepath)
+        if p.exists():
+            stat = p.stat()
+            caches[name] = CacheStatus(
+                exists=True,
+                age_seconds=round(time.time() - stat.st_mtime, 1),
+                size_bytes=stat.st_size,
+            )
+        else:
+            caches[name] = CacheStatus(exists=False)
+
+    # Count data
+    papers_raw, _ = get_cached_papers()
+    paper_count = len(papers_raw)
+
+    # Determine status
+    has_papers = caches.get("papers", CacheStatus(exists=False)).exists
+    status = "ok" if has_papers else "degraded"
+
+    return HealthResponse(
+        status=status,
+        version=__version__,
+        paper_count=paper_count,
+        caches=caches,
+        uptime_seconds=round(time.time() - _start_time, 1),
+    )
 
 
 @app.get("/demo/dashboard")

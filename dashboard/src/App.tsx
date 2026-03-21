@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { DetailPanel } from './components/DetailPanel'
 import { HudOverlay } from './components/HudOverlay'
 import { PaperListPanel } from './components/PaperListPanel'
@@ -6,6 +6,7 @@ import { SearchOverlay } from './components/SearchOverlay'
 import { TabBar, type ViewKey } from './components/TabBar'
 import { useDashboardData } from './hooks/useDashboardData'
 import { useDrillDown } from './hooks/useDrillDown'
+import { useHealth } from './hooks/useHealth'
 import { KeywordsView } from './views/KeywordsView'
 import { PapersView } from './views/PapersView'
 import { TimelineView } from './views/TimelineView'
@@ -27,19 +28,14 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const toggleSearch = useCallback(() => setSearchOpen((v) => !v), [])
 
-  const { data, error } = useDashboardData()
+  const { data } = useDashboardData()
+  const { data: health } = useHealth()
 
   // Stabilize empty array references to prevent infinite re-render loop
   // when data is null (during loading / API fetch)
   const EMPTY_TOPICS = useRef<TopicNode[]>([]).current
   const EMPTY_EDGES = useRef<Edge[]>([]).current
   const drill = useDrillDown(data?.topics ?? EMPTY_TOPICS, data?.edges ?? EMPTY_EDGES)
-
-  const statusMessage = useMemo(() => {
-    if (error) return 'API CONNECTION DEGRADED'
-    if (!data) return 'CONNECTING TO RESEARCH STREAMS'
-    return 'SYSTEM NOMINAL'
-  }, [data, error])
 
   const handleDeepAnalysis = () => {
     if (sel.kind === 'hub') {
@@ -70,7 +66,7 @@ export default function App() {
         overflow: 'hidden',
       }}
     >
-      <HudOverlay view={view} statusMessage={statusMessage} />
+      <HudOverlay view={view} health={health ?? null} />
 
       <div style={{ paddingTop: 44, paddingInline: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 15 }}>
         <TabBar view={view} onChange={(v) => { setView(v); setSel({ kind: 'none' }); setDeepTarget(null) }} />

@@ -207,7 +207,6 @@ marimo/_lsp/
 __marimo__/
 
 # ResearchTide generated caches
-data/live_dashboard.json
-data/live_papers.json
+data/live_*.json
 data/enriched_papers.json
 dashboard/data/

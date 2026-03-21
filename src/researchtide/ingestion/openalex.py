@@ -43,23 +43,36 @@ def fetch_works(
     categories: list[str] | None = None,
     max_results: int = 500,
     email: str = "",
+    from_date: str | None = None,
 ) -> list[dict]:
     """Fetch works from OpenAlex API using cursor pagination.
 
-    Fetches per-year to ensure balanced year distribution for YoY calculation.
-    Covers the two most recent full years plus the current year.
+    When *from_date* is supplied (``"YYYY-MM-DD"``), fetches works published
+    on or after that date in a single pass (no per-year balancing).
+    Otherwise falls back to the original balanced per-year strategy.
 
     Args:
         categories: OpenAlex concept/field IDs to filter on.
             Defaults to AI and NLP fields.
         max_results: Maximum number of works to retrieve (total across all years).
         email: Email for polite pool (higher rate limits).
+        from_date: If set, only fetch works published on or after this date
+            (``"YYYY-MM-DD"`` format).  Useful for incremental updates.
 
     Returns:
         List of raw OpenAlex work dicts.
     """
     if categories is None:
         categories = [FIELD_IDS["ai"], FIELD_IDS["nlp"]]
+
+    # Incremental mode: single pass with from_publication_date filter
+    if from_date is not None:
+        return _fetch_works_since(
+            categories=categories,
+            from_date=from_date,
+            max_results=max_results,
+            email=email,
+        )
 
     current_year = time.localtime().tm_year
     # Fetch balanced across: current year, last year, year before
@@ -78,6 +91,59 @@ def fetch_works(
         logger.info("Year %d: fetched %d works", year, len(year_works))
 
     return all_works
+
+
+def _fetch_works_since(
+    categories: list[str],
+    from_date: str,
+    max_results: int,
+    email: str = "",
+) -> list[dict]:
+    """Fetch works published on or after *from_date* (YYYY-MM-DD)."""
+    filter_parts = "|".join(categories)
+    filter_str = f"concepts.id:{filter_parts},from_publication_date:{from_date}"
+
+    headers: dict[str, str] = {}
+    if email:
+        headers["User-Agent"] = f"mailto:{email}"
+
+    params: dict[str, str | int] = {
+        "filter": filter_str,
+        "per_page": min(200, max_results),
+        "cursor": "*",
+    }
+    if email:
+        params["mailto"] = email
+
+    works: list[dict] = []
+    with httpx.Client(base_url=OPENALEX_API_BASE, headers=headers, timeout=30) as client:
+        while len(works) < max_results:
+            try:
+                resp = client.get("/works", params=params)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                logger.warning("OpenAlex API error (from_date=%s): %s", from_date, e)
+                break
+            except httpx.RequestError as e:
+                logger.warning("OpenAlex request failed (from_date=%s): %s", from_date, e)
+                break
+
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                break
+
+            works.extend(results)
+
+            next_cursor = data.get("meta", {}).get("next_cursor")
+            if not next_cursor:
+                break
+            params["cursor"] = next_cursor
+
+            time.sleep(RATE_LIMIT_INTERVAL)
+
+    logger.info("Fetched %d works since %s", len(works[:max_results]), from_date)
+    return works[:max_results]
 
 
 def _fetch_works_for_year(
