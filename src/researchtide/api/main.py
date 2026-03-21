@@ -136,11 +136,12 @@ app = FastAPI(title="ResearchTide API", version=__version__, lifespan=lifespan)
 # CORS — support comma-separated origins via env var
 _cors_raw = os.getenv("RESEARCHTIDE_CORS_ORIGIN", "http://localhost:5173")
 _cors_origins = [o.strip() for o in _cors_raw.split(",")]
+_allow_all = "*" in _cors_origins
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=not _allow_all,  # credentials cannot be used with "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
