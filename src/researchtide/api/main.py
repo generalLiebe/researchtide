@@ -265,9 +265,8 @@ def live_horizon() -> HorizonResponse:
     return HorizonResponse(alerts=alerts)
 
 
-@app.get("/live/keywords", response_model=KeywordTrendsResponse)
-def live_keywords() -> KeywordTrendsResponse:
-    """Return keyword-level trend metrics."""
+def _build_keywords_response() -> KeywordTrendsResponse:
+    """Compute keyword metrics and build response (heavy operation)."""
     from researchtide.api.live_dashboard import get_cached_papers
     from researchtide.analysis.keyword_trends import build_keyword_metrics
 
@@ -312,7 +311,6 @@ def live_keywords() -> KeywordTrendsResponse:
 
     top_emerging = [m.keyword for m in metrics if m.is_emerging][:10]
 
-    # Build field groups
     field_groups: dict[str, list[str]] = {}
     for m in metrics:
         for f in m.fields:
@@ -323,6 +321,41 @@ def live_keywords() -> KeywordTrendsResponse:
         top_emerging=top_emerging,
         field_groups=field_groups,
     )
+
+
+@app.get("/live/keywords", response_model=KeywordTrendsResponse)
+def live_keywords(refresh: bool = False) -> KeywordTrendsResponse:
+    """Return keyword-level trend metrics (cached to disk)."""
+    import json
+    import time
+    from pathlib import Path
+
+    cache_path = Path("data") / "live_keywords.json"
+    cache_ttl = int(os.getenv("DASHBOARD_CACHE_TTL", "21600"))
+
+    # Return from cache if fresh
+    if not refresh and cache_path.exists():
+        try:
+            data = json.loads(cache_path.read_text())
+            cached_at = data.pop("_cached_at", 0)
+            if time.time() - cached_at < cache_ttl:
+                return KeywordTrendsResponse(**data)
+        except Exception:
+            pass
+
+    # Compute fresh
+    response = _build_keywords_response()
+
+    # Write cache
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = response.model_dump()
+        payload["_cached_at"] = time.time()
+        cache_path.write_text(json.dumps(payload, default=str))
+    except Exception:
+        pass
+
+    return response
 
 
 @app.get("/live/topics/children", response_model=TopicChildrenResponse)

@@ -90,6 +90,12 @@ def build_live_payload(
         papers_cache_path = Path(cache_dir) / "live_papers.json"
         papers_cache_path.write_text(json.dumps(papers_cache, default=str))
         logger.info("Cached %d papers to %s", len(papers), papers_cache_path)
+
+        # Cache hierarchy tree for drill-down after server restart
+        if _hierarchy_tree:
+            tree_cache_path = Path(cache_dir) / "live_hierarchy.json"
+            tree_cache_path.write_text(json.dumps(_hierarchy_tree, default=str))
+            logger.info("Cached hierarchy tree to %s", tree_cache_path)
     except OSError as e:
         logger.warning("Failed to write cache: %s", e)
 
@@ -585,7 +591,18 @@ def get_horizon_data(papers_raw: list[dict]) -> list[dict]:
 
 def get_topic_children(parent_label: str, parent_level: str) -> tuple[list[TopicNode], list[GraphEdge]]:
     """Return child topics for a given parent from the hierarchy cache."""
+    global _hierarchy_tree
     from collections import Counter
+
+    # Rebuild hierarchy if empty (e.g. after server restart with cached JSON)
+    if not _hierarchy_tree:
+        tree_cache_path = Path("data") / "live_hierarchy.json"
+        if tree_cache_path.exists():
+            try:
+                _hierarchy_tree = json.loads(tree_cache_path.read_text())
+                logger.info("Loaded hierarchy tree from cache (%d domains)", len(_hierarchy_tree))
+            except Exception as e:
+                logger.warning("Failed to load hierarchy cache: %s", e)
 
     # Find the parent node in the hierarchy tree
     children_dict: dict[str, dict] | None = None

@@ -60,6 +60,11 @@ _STOP_PHRASES = frozenset({
     "training data", "training process",
     "research community", "research field", "research area",
     "high performance", "high quality", "high accuracy",
+    # Partial umbrella fragments
+    "generative artificial", "convolutional neural",
+    "recurrent neural", "artificial neural network",
+    "artificial neural networks", "deep neural network",
+    "deep neural networks",
     # Generic filler phrases
     "widely used", "new insights",
 })
@@ -211,8 +216,30 @@ def _extract_keyphrases_embedding(
         for phrase in selected:
             global_counts[phrase] += 1
 
-    # Return top n-grams by document frequency
-    return [phrase for phrase, _ in global_counts.most_common(top_n_global)]
+    # Deduplicate near-duplicates before returning
+    ranked = [phrase for phrase, _ in global_counts.most_common(top_n_global * 2)]
+    deduped: list[str] = []
+    seen_stems: set[str] = set()
+
+    for phrase in ranked:
+        if len(deduped) >= top_n_global:
+            break
+        # Normalize: strip trailing 's' for plural dedup
+        stem = re.sub(r"s$", "", phrase.lower())
+        if stem in seen_stems:
+            continue
+        # Skip if a longer phrase already contains this one (or vice versa)
+        is_substr = False
+        for existing in deduped:
+            if stem in existing.lower() or existing.lower() in stem:
+                is_substr = True
+                break
+        if is_substr:
+            continue
+        seen_stems.add(stem)
+        deduped.append(phrase)
+
+    return deduped
 
 
 @dataclass

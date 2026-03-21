@@ -28,6 +28,7 @@ export function KeywordsView({ onKeywordClick }: { onKeywordClick?: (keyword: st
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
   const [sortBy, setSortBy] = useState<SortKey>('horizon')
   const [emergingOnly, setEmergingOnly] = useState(false)
+  const [showTrails, setShowTrails] = useState(false)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; kw: KeywordMetric } | null>(null)
   const bubblesRef = useRef<BubblePoint[]>([])
 
@@ -79,7 +80,7 @@ export function KeywordsView({ onKeywordClick }: { onKeywordClick?: (keyword: st
       ctx.letterSpacing = '0.15em'
       ctx.fillText('KEYWORD LANDSCAPE', layout.left, 20)
 
-      const bubbles = drawKeywordBubbles(ctx, data.keywords, layout, hoverIdx, selectedIdx)
+      const bubbles = drawKeywordBubbles(ctx, data.keywords, layout, hoverIdx, selectedIdx, showTrails)
       bubblesRef.current = bubbles
     } else if (!data && !error) {
       ctx.fillStyle = 'rgba(177, 197, 255, 0.4)'
@@ -94,7 +95,7 @@ export function KeywordsView({ onKeywordClick }: { onKeywordClick?: (keyword: st
     }
 
     ctx.restore()
-  }, [data, error, hoverIdx, selectedIdx])
+  }, [data, error, hoverIdx, selectedIdx, showTrails])
 
   useEffect(() => {
     draw()
@@ -226,6 +227,22 @@ export function KeywordsView({ onKeywordClick }: { onKeywordClick?: (keyword: st
             </button>
           ))}
           <button
+            onClick={() => setShowTrails(!showTrails)}
+            style={{
+              ...headerMono,
+              fontSize: '8px',
+              padding: '2px 6px',
+              border: `1px solid ${showTrails ? 'rgba(130, 90, 210, 0.5)' : 'rgba(100, 150, 220, 0.2)'}`,
+              borderRadius: 3,
+              background: showTrails ? 'rgba(130, 90, 210, 0.15)' : 'transparent',
+              color: showTrails ? 'rgb(160, 120, 230)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              marginLeft: 'auto',
+            }}
+          >
+            TRAILS
+          </button>
+          <button
             onClick={() => setEmergingOnly(!emergingOnly)}
             style={{
               ...headerMono,
@@ -236,7 +253,6 @@ export function KeywordsView({ onKeywordClick }: { onKeywordClick?: (keyword: st
               background: emergingOnly ? 'rgba(245, 158, 11, 0.12)' : 'transparent',
               color: emergingOnly ? '#f59e0b' : 'var(--text-muted)',
               cursor: 'pointer',
-              marginLeft: 'auto',
             }}
           >
             EMERGING

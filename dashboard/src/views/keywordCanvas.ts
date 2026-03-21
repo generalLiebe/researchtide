@@ -28,6 +28,14 @@ export interface BubblePoint {
   velocity: number
 }
 
+/** Time progression color: purple(0) → amber(1) */
+function trailColor(t: number, alpha: number): string {
+  const r = Math.round(130 + (245 - 130) * t)
+  const g = Math.round(90 + (158 - 90) * t)
+  const b = Math.round(210 + (11 - 210) * t)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
 /** Score → color gradient: blue(0) → amber(50) → red(100) */
 function scoreColor(score: number): string {
   const t = Math.max(0, Math.min(100, score)) / 100
@@ -51,6 +59,7 @@ export function drawKeywordBubbles(
   layout: BubbleLayout,
   hoverIdx: number | null,
   selectedIdx: number | null,
+  showTrails: boolean = false,
 ): BubblePoint[] {
   const { left, right, top, bottom, w, h } = layout
   if (keywords.length === 0) return []
@@ -137,6 +146,75 @@ export function drawKeywordBubbles(
     ctx.stroke()
   }
   ctx.restore()
+
+  // Draw time-series trails
+  if (showTrails) {
+    const totalMonths = months.length
+    // Max vertical swing for trails (pixels)
+    const trailH = Math.min(h * 0.15, 60)
+
+    for (let ki = 0; ki < keywords.length; ki++) {
+      const k = keywords[ki]
+      const p = points[ki]
+      const isHighlight = hoverIdx === ki || selectedIdx === ki
+      const baseAlpha = isHighlight ? 0.65 : 0.1
+
+      if (k.monthly.length < 2) continue
+
+      // Per-keyword max for meaningful vertical variation
+      const kwMax = Math.max(...k.monthly.map((m) => m.count), 1)
+
+      // Compute trail points: x from month, y offset from bubble center
+      const trailPts: { x: number; y: number; t: number; count: number }[] = []
+      for (const m of k.monthly) {
+        const mi = monthIdx.get(m.month)
+        if (mi === undefined) continue
+        const x = left + (mi / Math.max(totalMonths - 1, 1)) * w
+        const countNorm = m.count / kwMax
+        // Y: offset upward from bubble center proportional to this keyword's own count
+        const y = p.y - countNorm * trailH
+        const t = mi / Math.max(totalMonths - 1, 1)
+        trailPts.push({ x, y, t, count: m.count })
+      }
+
+      // Draw filled area under the trail line
+      if (trailPts.length >= 2) {
+        ctx.save()
+        ctx.globalAlpha = baseAlpha * 0.4
+        ctx.beginPath()
+        ctx.moveTo(trailPts[0].x, p.y)
+        for (const tp of trailPts) ctx.lineTo(tp.x, tp.y)
+        ctx.lineTo(trailPts[trailPts.length - 1].x, p.y)
+        ctx.closePath()
+        ctx.fillStyle = trailColor(0.5, 1)
+        ctx.fill()
+        ctx.restore()
+      }
+
+      // Draw connecting line with gradient segments
+      ctx.save()
+      ctx.lineWidth = isHighlight ? 2.5 : 1.2
+      for (let j = 1; j < trailPts.length; j++) {
+        ctx.beginPath()
+        ctx.moveTo(trailPts[j - 1].x, trailPts[j - 1].y)
+        ctx.lineTo(trailPts[j].x, trailPts[j].y)
+        ctx.strokeStyle = trailColor(trailPts[j].t, isHighlight ? 0.8 : baseAlpha + 0.12)
+        ctx.stroke()
+      }
+      ctx.restore()
+
+      // Draw trail dots with gradient color
+      for (const tp of trailPts) {
+        const dotR = 1.5 + (tp.count / kwMax) * 3.5
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(tp.x, tp.y, dotR, 0, Math.PI * 2)
+        ctx.fillStyle = trailColor(tp.t, isHighlight ? 0.9 : baseAlpha + 0.15)
+        ctx.fill()
+        ctx.restore()
+      }
+    }
+  }
 
   // Draw bubbles
   for (const p of points) {
