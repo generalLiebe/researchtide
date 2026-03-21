@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { usePapers } from '../hooks/usePapers'
 
 interface PaperListPanelProps {
-  target: { hub?: string; topic?: string } | null
+  target: { hub?: string; topic?: string; keyword?: string } | null
   onClose: () => void
 }
 

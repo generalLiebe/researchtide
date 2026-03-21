@@ -27,6 +27,7 @@ class Paper(BaseModel):
     arxiv_id: str | None = None
     doi: str | None = None
     categories: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
     citation_count: int | None = None
     references: list[str] = Field(default_factory=list)  # paper_ids
 

@@ -1,11 +1,12 @@
 import { ScrambleText } from '../hooks/useScrambleText'
 
-export type ViewKey = 'world' | 'topics' | 'timeline' | 'papers'
+export type ViewKey = 'world' | 'topics' | 'timeline' | 'keywords' | 'papers'
 
 const TABS: { key: ViewKey; label: string }[] = [
   { key: 'world', label: '[ WORLD MAP ]' },
   { key: 'topics', label: '[ TOPIC GRAPH ]' },
   { key: 'timeline', label: '[ TIMELINE ]' },
+  { key: 'keywords', label: '[ KEYWORDS ]' },
   { key: 'papers', label: '[ PAPERS ]' },
 ]
 

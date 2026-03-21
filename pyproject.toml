@@ -21,6 +21,8 @@ dependencies = [
     "scikit-learn>=1.5",
     "numpy>=1.26",
     "pandas>=2.2",
+    # Forecasting
+    "statsmodels>=0.14",
     # Web API
     "fastapi>=0.115",
     "uvicorn>=0.30",

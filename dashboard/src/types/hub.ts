@@ -79,13 +79,56 @@ export interface MonthlyCount {
   count: number
 }
 
+export interface ForecastPoint {
+  month: string
+  predicted: number
+  lower_80: number
+  upper_80: number
+}
+
 export interface TimelineSeries {
   category: string
   monthly: MonthlyCount[]
   acceleration: number
+  forecast?: ForecastPoint[]
 }
 
 export interface TimelineData {
   series: TimelineSeries[]
+}
+
+export interface HorizonAlert {
+  topic: string
+  score: number
+  alert_level: 'watch' | 'emerging' | 'breakthrough'
+  factors: Record<string, number>
+  cross_field: string[]
+}
+
+export interface HorizonData {
+  alerts: HorizonAlert[]
+}
+
+export interface KeywordMetric {
+  keyword: string
+  total_count: number
+  monthly: MonthlyCount[]
+  velocity: number
+  acceleration: number
+  horizon_score: number
+  horizon_alert_level: 'watch' | 'emerging' | 'breakthrough'
+  horizon_factors: Record<string, number>
+  forecast: ForecastPoint[]
+  is_emerging: boolean
+  fields: string[]
+  paper_count: number
+  first_seen: string
+  last_seen: string
+}
+
+export interface KeywordTrendsData {
+  keywords: KeywordMetric[]
+  top_emerging: string[]
+  field_groups: Record<string, string[]>
 }
 

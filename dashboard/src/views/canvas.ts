@@ -1,4 +1,4 @@
-import type { Edge, TimelineSeries } from '../types/hub'
+import type { Edge, ForecastPoint, TimelineSeries } from '../types/hub'
 
 export function resizeCanvasToParent(canvas: HTMLCanvasElement) {
   const parent = canvas.parentElement
@@ -78,12 +78,21 @@ export interface ChartLayout {
   h: number
 }
 
-export function computeChartLayout(canvasW: number, canvasH: number): ChartLayout {
+export function computeChartLayout(canvasW: number, canvasH: number, needsScrollbar = false): ChartLayout {
   const left = 56
   const right = canvasW - 20
   const top = 24
-  const bottom = canvasH - 32
+  const bottom = canvasH - (needsScrollbar ? 48 : 32)
   return { left, right, top, bottom, w: right - left, h: bottom - top }
+}
+
+export interface TimelineChartResult {
+  months: string[]           // actual months only
+  combinedMonths: string[]   // actual + forecast
+  actualCount: number
+  yMax: number
+  virtualWidth: number       // total width needed for all months
+  pxPerMonth: number
 }
 
 export function drawTimelineChart(
@@ -92,24 +101,55 @@ export function drawTimelineChart(
   layout: ChartLayout,
   highlightIdx: number | null,
   hoverX: number | null,
-) {
-  // Collect all months and find y-max
-  const allMonths = new Set<string>()
+  scrollOffset: number = 0,
+): TimelineChartResult | undefined {
+  // --- Build unified month array (actual + forecast) ---
+  const actualMonthSet = new Set<string>()
   let yMax = 0
   for (const s of series) {
     for (const m of s.monthly) {
-      allMonths.add(m.month)
+      actualMonthSet.add(m.month)
       if (m.count > yMax) yMax = m.count
     }
   }
-  const months = Array.from(allMonths).sort()
-  if (months.length === 0) return { months, yMax }
+  const actualMonths = Array.from(actualMonthSet).sort()
+  if (actualMonths.length === 0) return undefined
+
+  // Collect forecast months
+  const forecastMonthSet = new Set<string>()
+  for (const s of series) {
+    if (s.forecast) {
+      for (const fp of s.forecast) {
+        forecastMonthSet.add(fp.month)
+        if (fp.upper_80 > yMax) yMax = fp.upper_80
+      }
+    }
+  }
+  const forecastOnly = Array.from(forecastMonthSet)
+    .filter((m) => !actualMonthSet.has(m))
+    .sort()
+  const combinedMonths = [...actualMonths, ...forecastOnly]
+  const actualCount = actualMonths.length
 
   yMax = Math.ceil(yMax * 1.1) || 1
   const { left, right, top, bottom, w, h } = layout
 
-  // Grid lines
+  // --- Compute step size and virtual width ---
+  const totalMonths = combinedMonths.length
+  // Fit all months into the chart width — no minimum pixel constraint
+  const pxPerMonth = w / (totalMonths - 1 || 1)
+  const virtualWidth = pxPerMonth * (totalMonths - 1)
+
+  // Map month index → X position (accounting for scroll)
+  const monthX = (i: number) => left + i * pxPerMonth - scrollOffset
+
+  // --- Clip to chart area ---
   ctx.save()
+  ctx.beginPath()
+  ctx.rect(left, top - 16, w, h + 32)
+  ctx.clip()
+
+  // --- Grid lines (drawn across full visible width) ---
   ctx.strokeStyle = 'rgba(100, 150, 220, 0.08)'
   ctx.lineWidth = 1
   ctx.setLineDash([])
@@ -120,32 +160,64 @@ export function drawTimelineChart(
     ctx.moveTo(left, y)
     ctx.lineTo(right, y)
     ctx.stroke()
-    // Y-axis label
-    const val = Math.round(yMax - (yMax / ySteps) * i)
-    ctx.fillStyle = 'rgba(160, 180, 210, 0.6)'
-    ctx.font = '11px monospace'
-    ctx.textAlign = 'right'
-    ctx.fillText(String(val), left - 6, y + 3)
   }
 
-  // X-axis labels (every 3rd month)
+  // --- X-axis labels (every 3rd month, unified) ---
+  ctx.fillStyle = 'rgba(160, 180, 210, 0.6)'
+  ctx.font = '11px monospace'
   ctx.textAlign = 'center'
-  for (let i = 0; i < months.length; i++) {
-    if (i % 3 !== 0 && i !== months.length - 1) continue
-    const x = left + (w / (months.length - 1 || 1)) * i
-    ctx.fillStyle = 'rgba(160, 180, 210, 0.6)'
-    ctx.fillText(months[i], x, bottom + 14)
+  for (let i = 0; i < combinedMonths.length; i++) {
+    if (i % 3 !== 0 && i !== combinedMonths.length - 1) continue
+    const x = monthX(i)
+    if (x < left - 30 || x > right + 30) continue  // skip off-screen
+    const isForecast = i >= actualCount
+    ctx.fillStyle = isForecast ? 'rgba(160, 180, 210, 0.4)' : 'rgba(160, 180, 210, 0.6)'
+    ctx.fillText(combinedMonths[i], x, bottom + 14)
   }
-  ctx.restore()
 
-  // Draw lines
+  // --- Forecast boundary divider ---
+  if (forecastOnly.length > 0) {
+    const boundaryX = monthX(actualCount - 1)
+    if (boundaryX >= left && boundaryX <= right) {
+      ctx.save()
+      ctx.strokeStyle = 'rgba(177, 197, 255, 0.35)'
+      ctx.lineWidth = 1
+      ctx.setLineDash([3, 5])
+      ctx.beginPath()
+      ctx.moveTo(boundaryX, top)
+      ctx.lineTo(boundaryX, bottom)
+      ctx.stroke()
+
+      ctx.fillStyle = 'rgba(177, 197, 255, 0.5)'
+      ctx.font = '9px monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText('FORECAST', boundaryX, top - 4)
+      ctx.restore()
+    }
+
+    // Light background tint for forecast region
+    const fcStartX = Math.max(left, monthX(actualCount - 1))
+    const fcEndX = monthX(combinedMonths.length - 1)
+    if (fcEndX > left && fcStartX < right) {
+      ctx.save()
+      ctx.fillStyle = 'rgba(100, 150, 220, 0.04)'
+      ctx.fillRect(
+        Math.max(left, fcStartX),
+        top,
+        Math.min(right, fcEndX) - Math.max(left, fcStartX),
+        h,
+      )
+      ctx.restore()
+    }
+  }
+
+  // --- Draw actual data lines ---
   for (let si = 0; si < series.length; si++) {
     const s = series[si]
     const color = TIER_COLORS[si % TIER_COLORS.length]
     const isHighlight = highlightIdx === null || highlightIdx === si
-    const monthMap = new Map(s.monthly.map((m) => [m.month, m.count]))
+    const dataMap = new Map(s.monthly.map((m) => [m.month, m.count]))
 
-    // Scale line width by acceleration magnitude
     const absAccel = Math.abs(s.acceleration)
     const accelWidth = isHighlight ? Math.min(5, 2 + absAccel * 0.5) : 1
 
@@ -153,25 +225,98 @@ export function drawTimelineChart(
     ctx.strokeStyle = color
     ctx.lineWidth = accelWidth
     ctx.globalAlpha = isHighlight ? 1 : 0.2
+    ctx.setLineDash([])
     ctx.beginPath()
 
     let started = false
-    for (let i = 0; i < months.length; i++) {
-      const count = monthMap.get(months[i]) ?? 0
-      const x = left + (w / (months.length - 1 || 1)) * i
+    for (let i = 0; i < actualCount; i++) {
+      const count = dataMap.get(combinedMonths[i]) ?? 0
+      const x = monthX(i)
       const y = bottom - (count / yMax) * h
-      if (!started) {
-        ctx.moveTo(x, y)
-        started = true
-      } else {
-        ctx.lineTo(x, y)
-      }
+      if (!started) { ctx.moveTo(x, y); started = true }
+      else ctx.lineTo(x, y)
     }
     ctx.stroke()
     ctx.restore()
   }
 
-  // Hover crosshair
+  // --- Draw forecast lines + confidence bands ---
+  if (forecastOnly.length > 0) {
+    for (let si = 0; si < series.length; si++) {
+      const s = series[si]
+      if (!s.forecast || s.forecast.length === 0) continue
+
+      const color = TIER_COLORS[si % TIER_COLORS.length]
+      const isHighlight = highlightIdx === null || highlightIdx === si
+      const fcMap = new Map(s.forecast.map((fp) => [fp.month, fp]))
+
+      // Build ordered forecast points matching combinedMonths
+      const fcIndices: { idx: number; fp: ForecastPoint }[] = []
+      for (let i = actualCount; i < combinedMonths.length; i++) {
+        const fp = fcMap.get(combinedMonths[i])
+        if (fp) fcIndices.push({ idx: i, fp })
+      }
+      if (fcIndices.length === 0) continue
+
+      // Confidence band
+      ctx.save()
+      ctx.globalAlpha = isHighlight ? 0.10 : 0.03
+      ctx.fillStyle = color
+      ctx.beginPath()
+      for (let j = 0; j < fcIndices.length; j++) {
+        const x = monthX(fcIndices[j].idx)
+        const y = bottom - (fcIndices[j].fp.upper_80 / yMax) * h
+        if (j === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+      for (let j = fcIndices.length - 1; j >= 0; j--) {
+        const x = monthX(fcIndices[j].idx)
+        const y = bottom - (fcIndices[j].fp.lower_80 / yMax) * h
+        ctx.lineTo(x, y)
+      }
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+
+      // Forecast dashed line (connecting from last actual point)
+      ctx.save()
+      ctx.strokeStyle = color
+      ctx.lineWidth = isHighlight ? 2 : 0.8
+      ctx.globalAlpha = isHighlight ? 0.8 : 0.15
+      ctx.setLineDash([5, 4])
+      ctx.beginPath()
+
+      // Start from last actual data point
+      const dataMap = new Map(s.monthly.map((m) => [m.month, m.count]))
+      const lastActual = dataMap.get(actualMonths[actualMonths.length - 1]) ?? 0
+      const lastX = monthX(actualCount - 1)
+      const lastY = bottom - (lastActual / yMax) * h
+      ctx.moveTo(lastX, lastY)
+
+      for (const { idx, fp } of fcIndices) {
+        ctx.lineTo(monthX(idx), bottom - (fp.predicted / yMax) * h)
+      }
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
+
+  // End chart clip
+  ctx.restore()
+
+  // --- Y-axis labels (drawn outside clip) ---
+  ctx.save()
+  ctx.fillStyle = 'rgba(160, 180, 210, 0.6)'
+  ctx.font = '11px monospace'
+  ctx.textAlign = 'right'
+  for (let i = 0; i <= ySteps; i++) {
+    const y = top + (h / ySteps) * i
+    const val = Math.round(yMax - (yMax / ySteps) * i)
+    ctx.fillText(String(val), left - 6, y + 3)
+  }
+  ctx.restore()
+
+  // --- Hover crosshair ---
   if (hoverX !== null && hoverX >= left && hoverX <= right) {
     ctx.save()
     ctx.strokeStyle = 'rgba(177, 197, 255, 0.4)'
@@ -184,5 +329,51 @@ export function drawTimelineChart(
     ctx.restore()
   }
 
-  return { months, yMax }
+  return { months: actualMonths, combinedMonths, actualCount, yMax, virtualWidth, pxPerMonth }
+}
+
+/** Draw a scroll indicator bar below the chart */
+export function drawScrollIndicator(
+  ctx: CanvasRenderingContext2D,
+  layout: ChartLayout,
+  virtualWidth: number,
+  chartWidth: number,
+  scrollOffset: number,
+  actualCount: number,
+  totalCount: number,
+) {
+  if (virtualWidth <= chartWidth + 1) return  // no scroll needed
+
+  const { left, bottom, w } = layout
+  const trackY = bottom + 24
+  const trackH = 6
+  const trackR = 3
+
+  // Track background
+  ctx.save()
+  ctx.fillStyle = 'rgba(100, 150, 220, 0.10)'
+  ctx.beginPath()
+  ctx.roundRect(left, trackY, w, trackH, trackR)
+  ctx.fill()
+
+  // Forecast region indicator on track
+  const fcRatio = actualCount / totalCount
+  const fcX = left + w * fcRatio
+  ctx.fillStyle = 'rgba(100, 150, 220, 0.06)'
+  ctx.beginPath()
+  ctx.roundRect(fcX, trackY, w - (fcX - left), trackH, trackR)
+  ctx.fill()
+
+  // Visible window thumb
+  const visibleRatio = chartWidth / virtualWidth
+  const thumbW = Math.max(20, w * visibleRatio)
+  const scrollRatio = scrollOffset / (virtualWidth - chartWidth)
+  const thumbX = left + scrollRatio * (w - thumbW)
+
+  ctx.fillStyle = 'rgba(177, 197, 255, 0.35)'
+  ctx.beginPath()
+  ctx.roundRect(thumbX, trackY, thumbW, trackH, trackR)
+  ctx.fill()
+
+  ctx.restore()
 }

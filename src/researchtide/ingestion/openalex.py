@@ -285,6 +285,12 @@ def works_to_papers(works: list[dict]) -> list[Paper]:
         if domain.get("display_name"):
             categories.append(domain["display_name"])
 
+        kw_list = []
+        for kw in w.get("keywords", []):
+            kw_name = kw.get("display_name", "")
+            if kw_name:
+                kw_list.append(kw_name)
+
         papers.append(Paper(
             paper_id=oa_id,
             title=title,
@@ -295,6 +301,7 @@ def works_to_papers(works: list[dict]) -> list[Paper]:
             arxiv_id=arxiv_id,
             doi=doi,
             categories=categories,
+            keywords=kw_list,
             citation_count=w.get("cited_by_count"),
         ))
 

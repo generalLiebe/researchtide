@@ -490,6 +490,99 @@ def _build_topics_from_works(works: list[dict]) -> tuple[list[TopicNode], list[G
     return topics, edges
 
 
+def get_horizon_data(papers_raw: list[dict]) -> list[dict]:
+    """Compute horizon scanning alerts from raw paper data.
+
+    Combines cross-field emergence detection with horizon scoring
+    to produce ranked alerts.
+
+    Returns:
+        List of alert dicts sorted by score (descending), top 20.
+    """
+    from collections import Counter
+    from datetime import date as _date
+
+    from researchtide.detection.horizon_score import compute_horizon_score
+
+    # Rebuild minimal works from papers_raw for cross-field detection
+    # papers_raw may not have primary_topic — use categories as proxy
+    # But we can also use the cached works if available
+    # For now, build topic data from papers_raw categories
+    topic_monthly: dict[str, dict[str, int]] = {}
+    topic_citations: dict[str, float] = {}
+    topic_paper_count: dict[str, int] = Counter()
+    for p in papers_raw:
+        cats = p.get("categories", [])
+        pub = p.get("published")
+        cites = p.get("citation_count") or 0
+
+        if not pub:
+            continue
+        try:
+            pub_date = _date.fromisoformat(str(pub)[:10])
+        except ValueError:
+            continue
+
+        month_key = pub_date.strftime("%Y-%m")
+
+        for cat in cats:
+            topic_paper_count[cat] += 1
+            topic_citations[cat] = topic_citations.get(cat, 0.0) + cites
+
+            if cat not in topic_monthly:
+                topic_monthly[cat] = {}
+            topic_monthly[cat][month_key] = topic_monthly[cat].get(month_key, 0) + 1
+
+    # Convert monthly dicts to sorted lists
+    topic_monthly_sorted: dict[str, list[tuple[_date, int]]] = {}
+    for cat, monthly in topic_monthly.items():
+        sorted_items = sorted(monthly.items())
+        topic_monthly_sorted[cat] = [
+            (_date.fromisoformat(f"{m}-01"), c) for m, c in sorted_items
+        ]
+
+    # Cross-field detection from hierarchy data
+    cross_field_map: dict[str, list[str]] = {}
+    if _hierarchy_tree:
+        # Build topic → fields mapping from hierarchy
+        for d_name, d_node in _hierarchy_tree.items():
+            for f_name, f_node in d_node.get("children", {}).items():
+                for s_name, s_node in f_node.get("children", {}).items():
+                    for t_name in s_node.get("children", {}).keys():
+                        cross_field_map.setdefault(t_name, []).append(f_name)
+                    cross_field_map.setdefault(s_name, []).append(f_name)
+
+    # Compute horizon scores for all topics with enough data
+    alerts: list[dict] = []
+    for cat in topic_paper_count:
+        monthly = topic_monthly_sorted.get(cat, [])
+        if len(monthly) < 2:
+            continue
+
+        pc = topic_paper_count[cat]
+        cv = topic_citations.get(cat, 0.0) / max(pc, 1)
+        fields = list(set(cross_field_map.get(cat, [])))
+
+        signal = compute_horizon_score(
+            label=cat,
+            monthly_counts=monthly,
+            field_appearances=fields,
+            citation_velocity=cv,
+            paper_count=pc,
+        )
+
+        alerts.append({
+            "topic": signal.label,
+            "score": signal.score,
+            "alert_level": signal.alert_level,
+            "factors": signal.factors,
+            "cross_fields": signal.cross_fields,
+        })
+
+    alerts.sort(key=lambda a: a["score"], reverse=True)
+    return alerts[:20]
+
+
 def get_topic_children(parent_label: str, parent_level: str) -> tuple[list[TopicNode], list[GraphEdge]]:
     """Return child topics for a given parent from the hierarchy cache."""
     from collections import Counter

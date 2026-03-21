@@ -15,9 +15,14 @@ from researchtide.api.schemas import (
     ArxivIngestResponse,
     EnrichRequest,
     EnrichResponse,
+    ForecastPoint,
     HealthResponse,
+    HorizonAlert,
+    HorizonResponse,
     InfluenceGraphRequest,
     InfluenceGraphResponse,
+    KeywordMetricOut,
+    KeywordTrendsResponse,
     MonthlyCount,
     PaperListResponse,
     PaperOut,
@@ -172,9 +177,10 @@ def live_papers(
 
 @app.get("/live/timeline", response_model=TimelineResponse)
 def live_timeline() -> TimelineResponse:
-    """Return monthly publication series + acceleration per category."""
+    """Return monthly publication series + acceleration + forecast per category."""
     from researchtide.api.live_dashboard import get_cached_papers
     from researchtide.analysis.citation_velocity import build_monthly_series, compute_acceleration
+    from researchtide.analysis.forecasting import forecast_series
     from researchtide.models.paper import Paper as PaperModel
 
     papers_raw, _ = get_cached_papers()
@@ -196,7 +202,7 @@ def live_timeline() -> TimelineResponse:
 
     monthly = build_monthly_series(paper_models)
 
-    # Build series items with acceleration, pick top 10 by total count
+    # Build series items with acceleration + forecast, pick top 10 by total count
     items: list[tuple[int, TimelineSeriesItem]] = []
     for cat, series in monthly.items():
         acc = compute_acceleration(series)
@@ -205,16 +211,118 @@ def live_timeline() -> TimelineResponse:
             MonthlyCount(month=d.strftime("%Y-%m"), count=c)
             for d, c in series
         ]
+
+        # Forecast next 6 months
+        fc_points = forecast_series(series, horizon=6)
+        forecast_out = [
+            ForecastPoint(
+                month=fp.month,
+                predicted=fp.predicted,
+                lower_80=fp.lower_80,
+                upper_80=fp.upper_80,
+            )
+            for fp in fc_points
+        ]
+
         items.append((total, TimelineSeriesItem(
             category=cat,
             monthly=monthly_counts,
             acceleration=round(acc, 2),
+            forecast=forecast_out,
         )))
 
     items.sort(key=lambda x: x[0], reverse=True)
     top = [item for _, item in items[:10]]
 
     return TimelineResponse(series=top)
+
+
+@app.get("/live/horizon", response_model=HorizonResponse)
+def live_horizon() -> HorizonResponse:
+    """Return horizon scanning alerts for emerging topics."""
+    from researchtide.api.live_dashboard import get_cached_papers, get_horizon_data
+
+    papers_raw, _ = get_cached_papers()
+
+    if not papers_raw:
+        from researchtide.api.live_dashboard import build_live_payload
+
+        email = os.getenv("OPENALEX_EMAIL", "")
+        build_live_payload(email=email, cache_ttl=0)
+        papers_raw, _ = get_cached_papers()
+
+    alerts_data = get_horizon_data(papers_raw)
+    alerts = [
+        HorizonAlert(
+            topic=a["topic"],
+            score=a["score"],
+            alert_level=a["alert_level"],
+            factors=a["factors"],
+            cross_field=a["cross_fields"],
+        )
+        for a in alerts_data
+    ]
+    return HorizonResponse(alerts=alerts)
+
+
+@app.get("/live/keywords", response_model=KeywordTrendsResponse)
+def live_keywords() -> KeywordTrendsResponse:
+    """Return keyword-level trend metrics."""
+    from researchtide.api.live_dashboard import get_cached_papers
+    from researchtide.analysis.keyword_trends import build_keyword_metrics
+
+    papers_raw, _ = get_cached_papers()
+
+    if not papers_raw:
+        from researchtide.api.live_dashboard import build_live_payload
+
+        email = os.getenv("OPENALEX_EMAIL", "")
+        build_live_payload(email=email, cache_ttl=0)
+        papers_raw, _ = get_cached_papers()
+
+    metrics = build_keyword_metrics(papers_raw, top_n=100)
+
+    keywords_out = [
+        KeywordMetricOut(
+            keyword=m.keyword,
+            total_count=m.total_count,
+            monthly=[MonthlyCount(month=d.strftime("%Y-%m"), count=c) for d, c in m.monthly],
+            velocity=m.velocity,
+            acceleration=m.acceleration,
+            horizon_score=m.horizon_score,
+            horizon_alert_level=m.horizon_alert_level,
+            horizon_factors=m.horizon_factors,
+            forecast=[
+                ForecastPoint(
+                    month=fp.month,
+                    predicted=fp.predicted,
+                    lower_80=fp.lower_80,
+                    upper_80=fp.upper_80,
+                )
+                for fp in m.forecast
+            ],
+            is_emerging=m.is_emerging,
+            fields=m.fields,
+            paper_count=m.paper_count,
+            first_seen=m.first_seen,
+            last_seen=m.last_seen,
+        )
+        for m in metrics
+    ]
+
+    top_emerging = [m.keyword for m in metrics if m.is_emerging][:10]
+
+    # Build field groups
+    field_groups: dict[str, list[str]] = {}
+    for m in metrics:
+        for f in m.fields:
+            field_groups.setdefault(f, []).append(m.keyword)
+
+    return KeywordTrendsResponse(
+        keywords=keywords_out,
+        top_emerging=top_emerging,
+        field_groups=field_groups,
+    )
 
 
 @app.get("/live/topics/children", response_model=TopicChildrenResponse)

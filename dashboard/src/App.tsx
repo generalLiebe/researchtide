@@ -6,6 +6,7 @@ import { SearchOverlay } from './components/SearchOverlay'
 import { TabBar, type ViewKey } from './components/TabBar'
 import { useDashboardData } from './hooks/useDashboardData'
 import { useDrillDown } from './hooks/useDrillDown'
+import { KeywordsView } from './views/KeywordsView'
 import { PapersView } from './views/PapersView'
 import { TimelineView } from './views/TimelineView'
 import { TopicGraphView } from './views/TopicGraphView'
@@ -21,7 +22,7 @@ type Selected =
 export default function App() {
   const [view, setView] = useState<ViewKey>('world')
   const [sel, setSel] = useState<Selected>({ kind: 'none' })
-  const [deepTarget, setDeepTarget] = useState<{ hub?: string; topic?: string } | null>(null)
+  const [deepTarget, setDeepTarget] = useState<{ hub?: string; topic?: string; keyword?: string } | null>(null)
   const [worldMode, setWorldMode] = useState<'flat' | 'globe'>('globe')
   const [searchOpen, setSearchOpen] = useState(false)
   const toggleSearch = useCallback(() => setSearchOpen((v) => !v), [])
@@ -164,6 +165,16 @@ export default function App() {
           paddingInline: 8,
         }}>
           <TimelineView />
+        </div>
+
+        <div style={{
+          position: 'absolute', inset: 0,
+          opacity: view === 'keywords' ? 1 : 0,
+          pointerEvents: view === 'keywords' ? 'auto' : 'none',
+          transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+          paddingInline: 8,
+        }}>
+          <KeywordsView onKeywordClick={(kw) => setDeepTarget({ keyword: kw })} />
         </div>
 
         <div style={{

@@ -147,14 +147,57 @@ class MonthlyCount(BaseModel):
     count: int
 
 
+class ForecastPoint(BaseModel):
+    month: str
+    predicted: float
+    lower_80: float
+    upper_80: float
+
+
 class TimelineSeriesItem(BaseModel):
     category: str
     monthly: list[MonthlyCount]
     acceleration: float
+    forecast: list[ForecastPoint] = Field(default_factory=list)
 
 
 class TimelineResponse(BaseModel):
     series: list[TimelineSeriesItem]
+
+
+class HorizonAlert(BaseModel):
+    topic: str
+    score: float  # 0-100
+    alert_level: str  # watch | emerging | breakthrough
+    factors: dict[str, float]
+    cross_field: list[str]  # new fields where topic emerged
+
+
+class HorizonResponse(BaseModel):
+    alerts: list[HorizonAlert]
+
+
+class KeywordMetricOut(BaseModel):
+    keyword: str
+    total_count: int
+    monthly: list[MonthlyCount]
+    velocity: float
+    acceleration: float
+    horizon_score: float
+    horizon_alert_level: str
+    horizon_factors: dict[str, float]
+    forecast: list[ForecastPoint] = Field(default_factory=list)
+    is_emerging: bool
+    fields: list[str] = Field(default_factory=list)
+    paper_count: int
+    first_seen: str
+    last_seen: str
+
+
+class KeywordTrendsResponse(BaseModel):
+    keywords: list[KeywordMetricOut]
+    top_emerging: list[str]
+    field_groups: dict[str, list[str]]
 
 
 class TopicChildrenResponse(BaseModel):

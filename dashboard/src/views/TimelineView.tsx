@@ -1,13 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTimelineData } from '../hooks/useTimelineData'
-import { resizeCanvasToParent, computeChartLayout, drawTimelineChart, TIER_COLORS } from './canvas'
+import { useHorizonAlerts } from '../hooks/useHorizonAlerts'
+import {
+  resizeCanvasToParent,
+  computeChartLayout,
+  drawTimelineChart,
+  drawScrollIndicator,
+  TIER_COLORS,
+} from './canvas'
+import type { TimelineChartResult } from './canvas'
+import type { HorizonAlert } from '../types/hub'
 
 export function TimelineView() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { data, error } = useTimelineData()
+  const { data: horizonData } = useHorizonAlerts()
   const [highlightIdx, setHighlightIdx] = useState<number | null>(null)
   const [hoverX, setHoverX] = useState<number | null>(null)
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; month: string; values: { cat: string; count: number }[] } | null>(null)
+  const [scrollOffset, setScrollOffset] = useState(0)
+  const chartResultRef = useRef<TimelineChartResult | undefined>(undefined)
+  const [tooltip, setTooltip] = useState<{
+    x: number
+    y: number
+    month: string
+    isForecast: boolean
+    values: { cat: string; count: number; predicted?: boolean }[]
+  } | null>(null)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -35,8 +53,25 @@ export function TimelineView() {
     }
 
     if (data && data.series.length > 0) {
-      const layout = computeChartLayout(w, h)
-      drawTimelineChart(ctx, data.series, layout, highlightIdx, hoverX)
+      const hasScroll = chartResultRef.current
+        ? chartResultRef.current.virtualWidth > w - 76
+        : false
+      const layout = computeChartLayout(w, h, hasScroll)
+      const result = drawTimelineChart(ctx, data.series, layout, highlightIdx, hoverX, scrollOffset)
+      chartResultRef.current = result
+
+      // Draw scroll indicator if needed
+      if (result && result.virtualWidth > layout.w + 1) {
+        drawScrollIndicator(
+          ctx,
+          layout,
+          result.virtualWidth,
+          layout.w,
+          scrollOffset,
+          result.actualCount,
+          result.combinedMonths.length,
+        )
+      }
     } else if (!data && !error) {
       ctx.fillStyle = 'rgba(177, 197, 255, 0.4)'
       ctx.font = '12px monospace'
@@ -50,7 +85,7 @@ export function TimelineView() {
     }
 
     ctx.restore()
-  }, [data, error, highlightIdx, hoverX])
+  }, [data, error, highlightIdx, hoverX, scrollOffset])
 
   useEffect(() => {
     draw()
@@ -68,37 +103,66 @@ export function TimelineView() {
       const my = e.clientY - rect.top
       setHoverX(mx)
 
-      const dims = { w: rect.width, h: rect.height }
-      const layout = computeChartLayout(dims.w, dims.h)
+      const result = chartResultRef.current
+      if (!result) return
 
-      // Find which month we're hovering
-      const allMonths = new Set<string>()
-      for (const s of data.series) {
-        for (const m of s.monthly) allMonths.add(m.month)
-      }
-      const months = Array.from(allMonths).sort()
-      if (months.length === 0) return
+      const { combinedMonths, actualCount, pxPerMonth } = result
+      const layout = computeChartLayout(rect.width, rect.height)
 
-      const step = layout.w / (months.length - 1 || 1)
-      const idx = Math.round((mx - layout.left) / step)
-      if (idx >= 0 && idx < months.length) {
-        const month = months[idx]
-        const values: { cat: string; count: number }[] = []
-        for (const s of data.series) {
-          const found = s.monthly.find((m) => m.month === month)
-          if (found && found.count > 0) values.push({ cat: s.category, count: found.count })
+      // Find which month we're hovering (accounting for scroll)
+      const idx = Math.round((mx - layout.left + scrollOffset) / pxPerMonth)
+      if (idx >= 0 && idx < combinedMonths.length) {
+        const month = combinedMonths[idx]
+        const isForecast = idx >= actualCount
+        const values: { cat: string; count: number; predicted?: boolean }[] = []
+
+        if (isForecast) {
+          // Show forecast values
+          for (const s of data.series) {
+            if (!s.forecast) continue
+            const fp = s.forecast.find((f) => f.month === month)
+            if (fp) values.push({ cat: s.category, count: Math.round(fp.predicted), predicted: true })
+          }
+        } else {
+          // Show actual values
+          for (const s of data.series) {
+            const found = s.monthly.find((m) => m.month === month)
+            if (found && found.count > 0) values.push({ cat: s.category, count: found.count })
+          }
         }
+
         values.sort((a, b) => b.count - a.count)
-        setTooltip({ x: e.clientX - rect.left, y: my, month, values: values.slice(0, 5) })
+        setTooltip({ x: mx, y: my, month, isForecast, values: values.slice(0, 5) })
+      } else {
+        setTooltip(null)
       }
     },
-    [data],
+    [data, scrollOffset],
   )
 
   const handleMouseLeave = useCallback(() => {
     setHoverX(null)
     setTooltip(null)
   }, [])
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLCanvasElement>) => {
+      const result = chartResultRef.current
+      if (!result) return
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const rect = canvas.getBoundingClientRect()
+      const layout = computeChartLayout(rect.width, rect.height)
+      const maxScroll = Math.max(0, result.virtualWidth - layout.w)
+      if (maxScroll <= 0) return
+
+      // Use deltaX for horizontal scroll, deltaY with Shift for horizontal
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+      setScrollOffset((prev) => Math.max(0, Math.min(maxScroll, prev + delta)))
+    },
+    [],
+  )
 
   const headerMono: React.CSSProperties = {
     fontFamily: 'var(--font-mono)',
@@ -115,6 +179,7 @@ export function TimelineView() {
           ref={canvasRef}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
+          onWheel={handleWheel}
           style={{ display: 'block', width: '100%', borderRadius: 4 }}
         />
 
@@ -123,7 +188,7 @@ export function TimelineView() {
           <div
             style={{
               position: 'absolute',
-              left: Math.min(tooltip.x + 12, (canvasRef.current?.clientWidth ?? 400) - 160),
+              left: Math.min(tooltip.x + 12, (canvasRef.current?.clientWidth ?? 400) - 180),
               top: tooltip.y - 10,
               background: 'rgba(13, 31, 60, 0.92)',
               backdropFilter: 'blur(8px)',
@@ -134,8 +199,13 @@ export function TimelineView() {
               minWidth: 120,
             }}
           >
-            <div style={{ ...headerMono, color: 'rgba(177, 197, 255, 0.7)', marginBottom: 4 }}>
-              {tooltip.month}
+            <div style={{ ...headerMono, color: 'rgba(177, 197, 255, 0.7)', marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span>{tooltip.month}</span>
+              {tooltip.isForecast && (
+                <span style={{ fontSize: '8px', color: 'rgba(177, 197, 255, 0.4)', fontStyle: 'italic' }}>
+                  FORECAST
+                </span>
+              )}
             </div>
             {tooltip.values.map((v) => (
               <div
@@ -151,17 +221,19 @@ export function TimelineView() {
                 }}
               >
                 <span>{v.cat}</span>
-                <span style={{ color: '#93c5fd' }}>{v.count}</span>
+                <span style={{ color: v.predicted ? 'rgba(147, 197, 253, 0.6)' : '#93c5fd' }}>
+                  {v.predicted ? '~' : ''}{v.count}
+                </span>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Acceleration ranking panel */}
+      {/* Sidebar: Horizon Signals + Acceleration ranking */}
       <div
         style={{
-          width: 200,
+          width: 220,
           background: 'rgba(240, 246, 255, 0.78)',
           backdropFilter: 'blur(16px)',
           borderLeft: '1px solid rgba(177, 197, 255, 0.25)',
@@ -170,6 +242,115 @@ export function TimelineView() {
           fontFamily: 'var(--font-headline)',
         }}
       >
+        {/* Horizon Signals section */}
+        {horizonData && horizonData.alerts.length > 0 && (
+          <>
+            <div style={{ ...headerMono, color: 'var(--text-muted)', marginBottom: 8 }}>
+              HORIZON SIGNALS
+            </div>
+            {horizonData.alerts.slice(0, 8).map((alert: HorizonAlert) => {
+              const levelConfig = {
+                breakthrough: {
+                  color: '#ef4444',
+                  bg: 'rgba(239, 68, 68, 0.12)',
+                  border: 'rgba(239, 68, 68, 0.35)',
+                  label: 'BREAKTHROUGH SIGNAL',
+                  blink: true,
+                },
+                emerging: {
+                  color: '#f59e0b',
+                  bg: 'rgba(245, 158, 11, 0.10)',
+                  border: 'rgba(245, 158, 11, 0.30)',
+                  label: 'EMERGING',
+                  blink: false,
+                },
+                watch: {
+                  color: '#eab308',
+                  bg: 'rgba(234, 179, 8, 0.08)',
+                  border: 'rgba(234, 179, 8, 0.25)',
+                  label: 'WATCH',
+                  blink: false,
+                },
+              }[alert.alert_level] || {
+                color: '#94a3b8',
+                bg: 'rgba(148, 163, 184, 0.08)',
+                border: 'rgba(148, 163, 184, 0.2)',
+                label: alert.alert_level.toUpperCase(),
+                blink: false,
+              }
+
+              return (
+                <div
+                  key={alert.topic}
+                  style={{
+                    padding: '6px 8px',
+                    marginBottom: 4,
+                    background: levelConfig.bg,
+                    border: `1px solid ${levelConfig.border}`,
+                    borderRadius: 3,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+                    <span
+                      style={{
+                        ...headerMono,
+                        fontSize: '8px',
+                        color: levelConfig.color,
+                        fontWeight: 700,
+                        animation: levelConfig.blink ? 'pulse 1.5s ease-in-out infinite' : undefined,
+                      }}
+                    >
+                      {alert.alert_level === 'breakthrough' ? '\u26A0 ' : ''}{levelConfig.label}
+                    </span>
+                    <span
+                      style={{
+                        ...headerMono,
+                        fontSize: '9px',
+                        color: levelConfig.color,
+                        marginLeft: 'auto',
+                      }}
+                    >
+                      {alert.score.toFixed(0)}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      marginBottom: 2,
+                    }}
+                  >
+                    {alert.topic}
+                  </div>
+                  {alert.cross_field.length > 0 && (
+                    <div
+                      style={{
+                        ...headerMono,
+                        fontSize: '8px',
+                        color: 'var(--text-muted)',
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {'\u2192'} {alert.cross_field.join(', ')}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            <div
+              style={{
+                height: 1,
+                background: 'rgba(177, 197, 255, 0.15)',
+                margin: '10px 0',
+              }}
+            />
+          </>
+        )}
+
         <div style={{ ...headerMono, color: 'var(--text-muted)', marginBottom: 10 }}>
           ACCELERATION RANKING
         </div>

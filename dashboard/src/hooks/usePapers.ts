@@ -11,6 +11,7 @@ function apiBase(): string {
 interface UsePapersParams {
   hub?: string
   topic?: string
+  keyword?: string
 }
 
 export function usePapers(params: UsePapersParams | null) {
@@ -33,6 +34,7 @@ export function usePapers(params: UsePapersParams | null) {
       const url = new URL(`${apiBase()}/live/papers`)
       if (params.hub) url.searchParams.set('hub', params.hub)
       if (params.topic) url.searchParams.set('topic', params.topic)
+      if (params.keyword) url.searchParams.set('keyword', params.keyword)
       url.searchParams.set('limit', '50')
 
       const resp = await fetch(url.toString())
@@ -48,7 +50,7 @@ export function usePapers(params: UsePapersParams | null) {
     } finally {
       setLoading(false)
     }
-  }, [params?.hub, params?.topic])
+  }, [params?.hub, params?.topic, params?.keyword])
 
   useEffect(() => {
     void fetch_()
