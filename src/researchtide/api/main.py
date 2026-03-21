@@ -61,6 +61,15 @@ _FULL_REBUILD_EVERY = 6  # every 6th incremental run → ~24h
 
 async def _scheduled_refresh() -> None:
     """Background loop: incremental every 4 h, full rebuild every ~24 h."""
+    # Wait before first run so the service can start accepting requests
+    await asyncio.sleep(120)
+    # First run: always do a full rebuild to populate all caches
+    try:
+        logger.info("Initial full rebuild starting…")
+        await asyncio.to_thread(_run_full_refresh)
+        logger.info("Initial full rebuild done.")
+    except Exception:
+        logger.exception("Initial full rebuild failed")
     counter = 0
     while True:
         try:
