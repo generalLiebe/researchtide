@@ -57,7 +57,18 @@ def build_live_payload(
     if not works:
         logger.warning("No works fetched from OpenAlex, falling back to demo data")
         from researchtide.api.demo import build_demo_payload
-        return build_demo_payload()
+
+        response = build_demo_payload()
+        # デモでも live_dashboard.json を書き /live/dashboard を埋める（/health の ok は live_papers 基準）
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = response.model_dump()
+            payload["_cached_at"] = time.time()
+            cache_path.write_text(json.dumps(payload, default=str))
+            logger.info("Cached demo fallback live dashboard to %s", cache_path)
+        except OSError as e:
+            logger.warning("Failed to write demo dashboard cache: %s", e)
+        return response
 
     logger.info("Fetched %d works, extracting institutions...", len(works))
     institutions = extract_institutions(works, email=email)

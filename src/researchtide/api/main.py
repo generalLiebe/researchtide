@@ -120,14 +120,6 @@ def _run_incremental_refresh() -> None:
 
     append_papers(papers)
 
-    # キーワードキャッシュが無ければ構築
-    keywords_cache = Path("data") / "live_keywords.json"
-    if not keywords_cache.exists():
-        try:
-            _rebuild_keywords_cache()
-        except Exception:
-            logger.exception("Keywords cache rebuild failed")
-
 
 def _rebuild_keywords_cache() -> None:
     """Build keyword metrics and write to disk cache."""
@@ -147,6 +139,12 @@ def _run_full_refresh() -> None:
 
     email = os.getenv("OPENALEX_EMAIL", "")
     build_live_payload(email=email, cache_ttl=0)
+    # SentenceTransformer 等でメモリを食うため既定 OFF（ローカルで .env に 1 を設定）
+    if os.getenv("RESEARCHTIDE_ENABLE_KEYWORD_CACHE", "").lower() in ("1", "true", "yes"):
+        try:
+            _rebuild_keywords_cache()
+        except Exception:
+            logger.exception("Keyword cache rebuild after full refresh failed")
 
 
 @asynccontextmanager
@@ -225,14 +223,27 @@ def demo_dashboard(seed: int = 42):
 
 @app.get("/live/dashboard")
 def live_dashboard(refresh: bool = False):
-    from researchtide.api.live_dashboard import build_live_payload
+    """Return cached graph payload. 同期での OpenAlex 再取得は行わない（512MB 向け）。
 
-    email = os.getenv("OPENALEX_EMAIL", "")
-    cache_ttl = int(os.getenv("DASHBOARD_CACHE_TTL", "21600"))
-    return build_live_payload(
-        email=email,
-        cache_ttl=0 if refresh else cache_ttl,
-    )
+    *refresh* は互換用。再計算はスケジュールされた full rebuild に任せる。
+    キャッシュがあれば TTL 超過でも返す（Render 等で空グラフにならないようにする）。
+    """
+    import json
+
+    from researchtide.api.schemas import DemoResponse
+
+    _ = refresh
+    cache_path = Path("data") / "live_dashboard.json"
+
+    if cache_path.exists():
+        try:
+            data = json.loads(cache_path.read_text())
+            data.pop("_cached_at", None)
+            return DemoResponse(**data)
+        except Exception:
+            logger.warning("live_dashboard.json read failed", exc_info=True)
+
+    return DemoResponse(hubs=[], topics=[], edges=[])
 
 
 @app.get("/live/papers", response_model=PaperListResponse)
@@ -251,13 +262,9 @@ def live_papers(
 
     papers_raw, hub_paper_map = get_cached_papers()
 
-    # If papers cache doesn't exist yet, trigger a live dashboard rebuild
+    # キャッシュが無い場合は空レスポンス（計算はスケジューラーに任せる）
     if not papers_raw:
-        from researchtide.api.live_dashboard import build_live_payload
-
-        email = os.getenv("OPENALEX_EMAIL", "")
-        build_live_payload(email=email, cache_ttl=0)
-        papers_raw, hub_paper_map = get_cached_papers()
+        return PaperListResponse(papers=[], total=0)
 
     # Determine which paper IDs to include
     if hub:
@@ -343,12 +350,9 @@ def live_timeline() -> TimelineResponse:
 
     papers_raw, _ = get_cached_papers()
 
+    # キャッシュが無い場合は空レスポンス（計算はスケジューラーに任せる）
     if not papers_raw:
-        from researchtide.api.live_dashboard import build_live_payload
-
-        email = os.getenv("OPENALEX_EMAIL", "")
-        build_live_payload(email=email, cache_ttl=0)
-        papers_raw, _ = get_cached_papers()
+        return TimelineResponse(series=[])
 
     # Convert raw dicts to Paper models for build_monthly_series
     paper_models = []
@@ -402,12 +406,9 @@ def live_horizon() -> HorizonResponse:
 
     papers_raw, _ = get_cached_papers()
 
+    # キャッシュが無い場合は空レスポンス（計算はスケジューラーに任せる）
     if not papers_raw:
-        from researchtide.api.live_dashboard import build_live_payload
-
-        email = os.getenv("OPENALEX_EMAIL", "")
-        build_live_payload(email=email, cache_ttl=0)
-        papers_raw, _ = get_cached_papers()
+        return HorizonResponse(alerts=[])
 
     alerts_data = get_horizon_data(papers_raw)
     alerts = [
@@ -429,13 +430,8 @@ def _build_keywords_response() -> KeywordTrendsResponse:
     from researchtide.analysis.keyword_trends import build_keyword_metrics
 
     papers_raw, _ = get_cached_papers()
-
     if not papers_raw:
-        from researchtide.api.live_dashboard import build_live_payload
-
-        email = os.getenv("OPENALEX_EMAIL", "")
-        build_live_payload(email=email, cache_ttl=0)
-        papers_raw, _ = get_cached_papers()
+        return KeywordTrendsResponse(keywords=[], top_emerging=[], field_groups={})
 
     metrics = build_keyword_metrics(papers_raw, top_n=100)
 
@@ -483,25 +479,24 @@ def _build_keywords_response() -> KeywordTrendsResponse:
 
 @app.get("/live/keywords", response_model=KeywordTrendsResponse)
 def live_keywords(refresh: bool = False) -> KeywordTrendsResponse:
-    """Return keyword-level trend metrics (cached to disk)."""
+    """Return keyword metrics from disk cache. 同期での埋め込み再計算は行わない。
+
+    *refresh* は互換用。キャッシュ構築は full rebuild + RESEARCHTIDE_ENABLE_KEYWORD_CACHE。
+    キャッシュがあれば TTL 超過でも返す。
+    """
     import json
-    import time
-    from pathlib import Path
 
+    _ = refresh
     cache_path = Path("data") / "live_keywords.json"
-    cache_ttl = int(os.getenv("DASHBOARD_CACHE_TTL", "21600"))
 
-    # Return from cache if fresh
-    if not refresh and cache_path.exists():
+    if cache_path.exists():
         try:
             data = json.loads(cache_path.read_text())
-            cached_at = data.pop("_cached_at", 0)
-            if time.time() - cached_at < cache_ttl:
-                return KeywordTrendsResponse(**data)
+            data.pop("_cached_at", None)
+            return KeywordTrendsResponse(**data)
         except Exception:
-            pass
+            logger.warning("live_keywords.json read failed", exc_info=True)
 
-    # キャッシュが無い場合は空レスポンスを返す（計算はスケジューラーに任せる）
     return KeywordTrendsResponse(keywords=[], top_emerging=[], field_groups={})
 
 
