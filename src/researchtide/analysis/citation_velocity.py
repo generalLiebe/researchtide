@@ -23,8 +23,12 @@ def build_monthly_series(
     """
     monthly: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
+    today = date.today()
+
     for paper in papers:
         if not paper.published:
+            continue
+        if paper.published > today:
             continue
         month_key = paper.published.strftime("%Y-%m")
         for cat in paper.categories:
