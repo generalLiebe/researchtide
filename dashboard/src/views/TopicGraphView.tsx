@@ -220,6 +220,7 @@ export function TopicGraphView({
             height: layoutDims.h,
             transform: `translate(${transform.offsetX}px, ${transform.offsetY}px) scale(${transform.scale})`,
             transformOrigin: '0 0',
+            pointerEvents: 'none',
           }}
         >
           <TopicNodeOverlay

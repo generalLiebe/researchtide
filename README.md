@@ -1,8 +1,6 @@
-# researchtide
-Predict the future of science from within — a multi-agent research trend analysis system
 <div align="center">
 
-# 🌊 ResearchTide
+# ResearchTide
 
 ### Predict the future of science from within.
 
@@ -12,9 +10,23 @@ Predict the future of science from within — a multi-agent research trend analy
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Stars](https://img.shields.io/github/stars/generalLiebe/researchtide?style=social)](https://github.com/generalLiebe/researchtide)
 
-**[ホワイトペーパー（日本語）](docs/whitepaper_ja.md)** · **[White Paper (English)](docs/whitepaper_en.md)** · **[UI Spec](docs/UI_SPEC.md)**
+**[White Paper (Japanese)](docs/whitepaper_ja.md)** · **[UI Spec](docs/UI_SPEC.md)** · **[Contributing](CONTRIBUTING.md)**
 
 </div>
+
+---
+
+## Screenshots
+
+![World Map — Globe view with Deep Analysis](docs/screenshots/world_map.png)
+
+| Topic Graph | Timeline |
+|:---:|:---:|
+| ![Topic Graph](docs/screenshots/topic_graph.png) | ![Timeline](docs/screenshots/timeline.png) |
+
+| Keywords | Papers |
+|:---:|:---:|
+| ![Keywords](docs/screenshots/keywords.png) | ![Papers](docs/screenshots/papers.png) |
 
 ---
 
@@ -24,9 +36,9 @@ Existing tools like VOSviewer and Semantic Scholar are excellent at visualizing 
 
 > **"Where is this field going, and how fast?"**
 
-ResearchTide is built to answer exactly that. It monitors the living dynamics of academic literature — growth rates, cross-disciplinary propagation, ethics lag, and technology displacement — through a system of AI agents that simulate the research community itself.
+ResearchTide monitors the living dynamics of academic literature — growth rates, cross-disciplinary propagation, and technology displacement — to surface emerging research trends before they go mainstream.
 
-Think of it as **Horizon Scanning, made computational.** Or: *Chaldeas for the research world.*
+Think of it as **Horizon Scanning, made computational.**
 
 ---
 
@@ -34,99 +46,51 @@ Think of it as **Horizon Scanning, made computational.** Or: *Chaldeas for the r
 
 | Feature | Description |
 |---|---|
-| 🔭 **Weak Signal Detection** | Identifies topics whose citation velocity is accelerating before they go mainstream |
-| 🌐 **Cross-field Propagation Graph** | Maps how concepts travel across disciplines (e.g. NLP → CV → Biology) |
-| ⚖️ **Ethics Lag Metric** | Measures the delay between technological breakthroughs and ethics research |
-| 📈 **Adoption / Displacement Model** | Classifies topics as Weak Signal / Rising / Mainstream / Displaced |
-| 🏙️ **Social Penetration Index** | Tracks GitHub stars, Stack Overflow, patents, and news mentions |
-| 🔄 **Self-correcting Feedback Loop** | Compares predictions against reality and recalibrates the model monthly |
+| **Weak Signal Detection** | Identifies topics whose citation velocity is accelerating before they go mainstream |
+| **Keyword Trend Analysis** | Tracks technical terms over time with velocity, acceleration, and forecast |
+| **Cross-field Propagation** | Maps how concepts travel across disciplines (e.g. NLP → Biology) |
+| **Horizon Scoring** | Scores and classifies topics as Watch / Emerging / Breakthrough |
+| **Timeline Forecasting** | Statistical forecasting of publication volume per category |
+| **Live Dashboard** | Real-time React dashboard with multiple analysis views |
 
 ---
 
-## How It Works
+## Dashboard Tabs
 
-ResearchTide runs a **6-layer pipeline**:
-
-```
-Layer 0  Data Ingestion      arXiv · Semantic Scholar · OpenAlex · GitHub · Patents
-Layer 1  Topic Analysis      BERTopic · Citation graph · Keyword time-series
-Layer 2  Weak Signal         Anomaly detection on citation velocity · Displacement detector
-Layer 3  Social Tracking     GitHub stars · Stack Overflow · News mentions
-Layer 4  Multi-Agent Sim     Field Expert · Horizon Scanner · Ethics Monitor · Adoption Predictor
-Layer 5  Feedback Loop       Divergence measurement · Model recalibration · Prediction log
-```
-
-The **multi-agent layer** is where predictions are generated. Four specialized agents collaborate:
-
-- **Field Expert Agent** — persona built from the top-cited papers in each discipline
-- **Horizon Scanner Agent** — monitors all agents, surfaces emerging cross-field patterns
-- **Ethics Monitor Agent** — tracks Ethics Lag in real time, fires alerts when lag is growing
-- **Adoption Predictor Agent** — classifies each topic's trajectory using historical adoption patterns
+| Tab | What it shows |
+|-----|---------------|
+| **World Map** | Geographic distribution of research institutions |
+| **Topic Graph** | Interactive network of research hubs and topic relationships |
+| **Timeline** | Monthly publication trends per category with acceleration and forecast |
+| **Keywords** | Top technical terms with velocity, horizon score, and emerging flag |
+| **Papers** | Searchable paper list with filtering by hub, topic, keyword, author |
 
 ---
 
-## Research Questions
+## Quick Start
 
-ResearchTide is simultaneously an OSS engineering project and a research project. The five core questions driving its development:
+### Prerequisites
 
-- **RQ1** — Can citation dynamics at time *t* predict high-impact topics at *t+2*?
-- **RQ2** — Is the Ethics Lag for AI research shrinking or growing over 2010–2025?
-- **RQ3** — Are technology displacement events (GAN→Diffusion, LSTM→Transformer) predictable from citation signals?
-- **RQ4** — Does the self-correcting feedback loop measurably improve prediction accuracy over time?
-- **RQ5** — How faithfully do literature-grounded agent personas represent real researcher perspectives?
+- Python 3.11+
+- Node.js 18+
 
----
-
-## Roadmap
-
-| Phase | Timeline | Milestones |
-|---|---|---|
-| **v0.1 — Foundation** | Apr–Jun 2026 | arXiv pipeline · BERTopic · Static influence graph · Public release · arXiv preprint |
-| **v0.2 — Agents** | Jul–Sep 2026 | 4 agents · LLM Forum · Social tracking · Basic dashboard |
-| **v0.3 — Feedback** | Oct–Dec 2026 | Feedback loop · Divergence measurement · Retrospective validation (2010–2022) |
-| **v1.0 — Paper** | 2027 Q1 | WSDM / WWW / SIGIR submission · Interactive public demo |
-
----
-
-## Tech Stack
-
-```
-Backend      Python · FastAPI · Railway
-NLP          BERTopic · sentence-transformers · spaCy
-Agents       LangGraph · Anthropic Claude API · OpenAI API
-Graphs       NetworkX · PyVis
-Anomaly      Isolation Forest · CUSUM
-Frontend     React · D3.js · Tailwind CSS
-Storage      PostgreSQL · Redis
-CI/CD        GitHub Actions
-```
-
-One API key is all you need. Supports Claude, GPT, DeepSeek, and local models via Ollama.
-
----
-
-## Local Development (v0.1)
-
-### Backend API
-
-1) Install (editable) dependencies:
+### 1. Backend
 
 ```bash
-python -m pip install -e ".[dev,viz]"
-```
+git clone https://github.com/generalLiebe/researchtide.git
+cd researchtide
 
-2) Run API:
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -e ".[dev,viz]"
 
-```bash
+cp .env.example .env
+# Optional: add S2_API_KEY and OPENALEX_EMAIL for richer data
+
 uvicorn researchtide.api.main:app --reload --port 8000
 ```
 
-Environment:
-
-- `S2_API_KEY`: Semantic Scholar API key (optional; see `.env.example`)
-- `RESEARCHTIDE_CORS_ORIGIN`: dashboard origin (default `http://localhost:5173`)
-
-### Dashboard (React)
+### 2. Dashboard (separate terminal)
 
 ```bash
 cd dashboard
@@ -134,48 +98,120 @@ npm install
 npm run dev
 ```
 
-Optional:
+### 3. Open http://localhost:5173
 
-- `dashboard/.env.example` → set `VITE_API_BASE` (default is `http://localhost:8000`)
+The background scheduler automatically fetches papers from OpenAlex after ~2 minutes. All dashboard tabs will populate as data arrives.
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `S2_API_KEY` | Semantic Scholar API key ([get one free](https://www.semanticscholar.org/product/api#api-key-form)) | *(none)* |
+| `OPENALEX_EMAIL` | Email for OpenAlex polite pool (higher rate limits) | *(none)* |
+| `RESEARCHTIDE_CORS_ORIGIN` | Allowed CORS origins | `http://localhost:5173` |
+| `DASHBOARD_CACHE_TTL` | Cache TTL in seconds | `21600` (6h) |
+
+---
+
+## How It Works
+
+```
+Data Ingestion     arXiv · Semantic Scholar · OpenAlex
+Topic Analysis     BERTopic · Citation graph · Keyword time-series
+Weak Signal        Anomaly detection on citation velocity
+Horizon Scanning   Cross-field propagation · Emergence scoring
+Forecasting        Statistical forecast (statsmodels) per category/keyword
+Dashboard          React · Recharts · FastAPI
+```
+
+Data flows from OpenAlex into a local cache, which is processed into multiple analysis views: topic graphs, keyword trends, horizon alerts, and timeline forecasts. A background scheduler keeps the data fresh.
+
+---
+
+## Tech Stack
+
+```
+Backend      Python 3.11+ · FastAPI · Pydantic v2
+NLP          BERTopic · sentence-transformers
+Graphs       NetworkX
+Forecasting  statsmodels · scikit-learn · NumPy
+Frontend     React · TypeScript · Recharts · Tailwind CSS
+Deployment   Docker · Render (API) · Vercel (Dashboard)
+```
+
+---
+
+## Project Structure
+
+```
+researchtide/
+  src/researchtide/
+    api/            # FastAPI endpoints and live dashboard logic
+    analysis/       # Citation velocity, keyword trends, forecasting
+    detection/      # Weak signal and horizon score detection
+    graph/          # Influence graph construction
+    ingestion/      # arXiv, OpenAlex, Semantic Scholar connectors
+    models/         # Pydantic data models
+  dashboard/        # React + TypeScript frontend
+  tests/            # Test suite
+  scripts/          # Data refresh utilities
+  docs/             # White paper, UI spec
+```
+
+---
+
+## Research Questions
+
+ResearchTide is simultaneously an OSS engineering project and a research project:
+
+- **RQ1** — Can citation dynamics at time *t* predict high-impact topics at *t+2*?
+- **RQ2** — Are technology displacement events (GAN→Diffusion, LSTM→Transformer) predictable from citation signals?
+- **RQ3** — Does a self-correcting feedback loop measurably improve prediction accuracy over time?
+
+---
+
+## Roadmap
+
+| Phase | Timeline | Milestones |
+|---|---|---|
+| **v0.1 — Foundation** | Apr–Jun 2026 | Data pipeline, topic analysis, dashboard, public release |
+| **v0.2 — Agents** | Jul–Sep 2026 | Multi-agent simulation, LLM forum, social tracking |
+| **v0.3 — Feedback** | Oct–Dec 2026 | Self-correcting feedback loop, retrospective validation |
+| **v1.0 — Paper** | 2027 Q1 | Academic paper submission, interactive public demo |
 
 ---
 
 ## Contributing
 
-ResearchTide is designed as a community project from day one. Contributions welcome in:
+Contributions are welcome! Areas where help is especially needed:
 
-- 📡 **Data connectors** — PubMed, IEEE Xplore, ACL Anthology
-- 🤖 **Agent personas** — domain-specific tuning for your research community
-- 📊 **Visualization components** — new dashboard views
-- 🗂️ **Evaluation benchmarks** — historical datasets for retrospective validation
-- 🌍 **Translations** — making the project accessible beyond English-speaking communities
-- 📝 **Divergence reports** — "this prediction was wrong/right" reports directly improve the feedback loop
+- **Data connectors** — PubMed, IEEE Xplore, ACL Anthology, DBLP
+- **Dashboard components** — New visualization views, UX improvements
+- **Evaluation benchmarks** — Historical datasets for retrospective validation
+- **Translations** — Making the project accessible beyond English
+- **Testing** — Expanding test coverage
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and guidelines.
 
 ---
 
-## Papers & Docs
+## Docs
 
-- 📄 [White Paper — Japanese](docs/whitepaper_ja.md)
-- 📄 [White Paper — English](docs/whitepaper_en.md) *(coming soon)*
-- 🎨 [UI Design Specification](docs/UI_SPEC.md)
+- [White Paper (Japanese)](docs/whitepaper_ja.md)
+- [UI Design Specification](docs/UI_SPEC.md)
 
 ---
 
 ## Author
 
-**Sosui Moribe**  
-Graduate School of Design, Kyushu University  
-moribe.sosui.695@s.kyushu-u.ac.jp  
-[Researchmap](https://researchmap.jp) *(coming soon)*
-
-Research interests: Recommendation systems · Multi-agent dialogue · Computational linguistics · Educational AI
+**Sosui Moribe**
+Graduate School of Design, Kyushu University
+moribe.sosui.695@s.kyushu-u.ac.jp
 
 ---
 
 <div align="center">
 
-*If this project resonates with you, a ⭐ star means a lot.*
+*If this project resonates with you, a star means a lot.*
 
 </div>

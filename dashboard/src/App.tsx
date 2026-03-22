@@ -137,8 +137,11 @@ export default function App() {
         <div style={{
           position: 'absolute', inset: 0,
           opacity: view === 'topics' ? 1 : 0,
+          visibility: view === 'topics' ? 'visible' : 'hidden',
           pointerEvents: view === 'topics' ? 'auto' : 'none',
-          transition: 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: view === 'topics'
+            ? 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), visibility 0s'
+            : 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1), visibility 0s 300ms',
           paddingInline: 8,
         }}>
           <TopicGraphView
