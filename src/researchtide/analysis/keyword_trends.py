@@ -314,6 +314,8 @@ def build_keyword_metrics(
     kw_paper_ids: dict[str, set[str]] = {}
     kw_count: Counter[str] = Counter()
 
+    today = date.today()
+
     for p in valid_papers:
         pub = p.get("published")
         if not pub:
@@ -321,6 +323,8 @@ def build_keyword_metrics(
         try:
             pub_date = date.fromisoformat(str(pub)[:10])
         except ValueError:
+            continue
+        if pub_date > today:
             continue
 
         month_key = pub_date.strftime("%Y-%m")
@@ -354,7 +358,6 @@ def build_keyword_metrics(
     if not top_keywords:
         return []
 
-    today = date.today()
     six_months_ago = today.replace(
         year=today.year if today.month > 6 else today.year - 1,
         month=today.month - 6 if today.month > 6 else today.month + 6,

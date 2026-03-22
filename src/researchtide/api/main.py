@@ -63,13 +63,13 @@ async def _scheduled_refresh() -> None:
     """Background loop: incremental every 4 h, full rebuild every ~24 h."""
     # Wait before first run so the service can start accepting requests
     await asyncio.sleep(120)
-    # First run: always do a full rebuild to populate all caches
+    # First run: incremental only (full rebuild is too heavy for 512MB free tier)
     try:
-        logger.info("Initial full rebuild starting…")
-        await asyncio.to_thread(_run_full_refresh)
-        logger.info("Initial full rebuild done.")
+        logger.info("Initial incremental refresh starting…")
+        await asyncio.to_thread(_run_incremental_refresh)
+        logger.info("Initial incremental refresh done.")
     except Exception:
-        logger.exception("Initial full rebuild failed")
+        logger.exception("Initial incremental refresh failed")
     counter = 0
     while True:
         try:
@@ -119,6 +119,27 @@ def _run_incremental_refresh() -> None:
         s2_enrich(enrichable, api_key=s2_key, delay=1.1)
 
     append_papers(papers)
+
+    # キーワードキャッシュが無ければ構築
+    keywords_cache = Path("data") / "live_keywords.json"
+    if not keywords_cache.exists():
+        try:
+            _rebuild_keywords_cache()
+        except Exception:
+            logger.exception("Keywords cache rebuild failed")
+
+
+def _rebuild_keywords_cache() -> None:
+    """Build keyword metrics and write to disk cache."""
+    import json
+
+    response = _build_keywords_response()
+    cache_path = Path("data") / "live_keywords.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = response.model_dump()
+    payload["_cached_at"] = time.time()
+    cache_path.write_text(json.dumps(payload, default=str))
+    logger.info("Keywords cache rebuilt (%d keywords)", len(response.keywords))
 
 
 def _run_full_refresh() -> None:
@@ -480,19 +501,8 @@ def live_keywords(refresh: bool = False) -> KeywordTrendsResponse:
         except Exception:
             pass
 
-    # Compute fresh
-    response = _build_keywords_response()
-
-    # Write cache
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = response.model_dump()
-        payload["_cached_at"] = time.time()
-        cache_path.write_text(json.dumps(payload, default=str))
-    except Exception:
-        pass
-
-    return response
+    # キャッシュが無い場合は空レスポンスを返す（計算はスケジューラーに任せる）
+    return KeywordTrendsResponse(keywords=[], top_emerging=[], field_groups={})
 
 
 @app.get("/live/topics/children", response_model=TopicChildrenResponse)
